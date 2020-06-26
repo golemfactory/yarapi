@@ -1,9 +1,9 @@
 use actix::prelude::*;
+use bigdecimal::BigDecimal;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use std::{
     convert::{TryFrom, TryInto},
-    str::FromStr,
     time::Duration,
 };
 use url::Url;
@@ -106,6 +106,7 @@ pub struct Requestor {
     constraints: Constraints,
     tasks: Vec<CommandList>,
     timeout: Duration,
+    budget: BigDecimal,
 }
 
 impl Requestor {
@@ -117,9 +118,10 @@ impl Requestor {
             constraints: constraints!["golem.com.pricing.model" == "linear"], /* TODO: other models */
             timeout: Duration::from_secs(60),
             tasks: vec![],
+            budget: 0.into(),
         }
     }
-    pub fn constraints(self, constraints: Constraints) -> Self {
+    pub fn with_constraints(self, constraints: Constraints) -> Self {
         Self {
             constraints,
             ..self
@@ -128,7 +130,10 @@ impl Requestor {
     pub fn with_timeout(self, timeout: std::time::Duration) -> Self {
         Self { timeout, ..self }
     }
-    pub fn tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
+    pub fn with_max_budget_gnt<T: Into<BigDecimal>>(self, budget: T) -> Self {
+        Self { budget: budget.into(), ..self }
+    }
+    pub fn with_tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
         Self {
             tasks: tasks.collect(),
             ..self
@@ -139,8 +144,7 @@ impl Requestor {
     }
     fn create_demand(&self, image_url: &Url) -> Demand {
         // let hex = format!("{:x}", <sha3::Sha3_224 as Digest>::digest(image.as_slice()));
-        //     Ok(format!("hash:sha3:{}:{}", hex, download_url))
-            // "golem.node.debug.subnet" == "mysubnet", TODO
+        // "golem.node.debug.subnet" == "mysubnet", TODO
         Demand::new(
             serde_json::json!({
                 "golem": {
@@ -148,62 +152,9 @@ impl Requestor {
                     "srv.comp.wasm.task_package": format!("hash:sha3:0x1352137839e66fd48e59e09d03d1f7229fc3150081e98159ab2107c5:{}", image_url), /* TODO!!! */
                     "srv.comp.expiration":
                         (chrono::Utc::now() + chrono::Duration::minutes(2)).timestamp_millis(), // TODO
-                    "node.debug.subnet": "mysubnet",
                 },
             }),
             self.constraints.to_string(),
-        )
-    }
-}
-
-#[derive(Clone)]
-pub struct WasmDemand {
-    spec: ImageSpec,
-    min_ram_gib: f64,
-    min_storage_gib: f64,
-}
-
-impl WasmDemand {
-    pub fn with_image(spec: ImageSpec) -> Self {
-        Self {
-            spec,
-            min_ram_gib: 0.0,
-            min_storage_gib: 0.0,
-        }
-    }
-    pub fn min_ram_gib<T: Into<f64>>(self, min_ram_gib: T) -> Self {
-        Self {
-            min_ram_gib: min_ram_gib.into(),
-            ..self
-        }
-    }
-    pub fn min_storage_gib<T: Into<f64>>(self, min_storage_gib: T) -> Self {
-        Self {
-            min_storage_gib: min_storage_gib.into(),
-            ..self
-        }
-    }
-}
-
-impl From<WasmDemand> for Demand {
-    fn from(wasm_demand: WasmDemand) -> Self {
-        Demand::new(
-            serde_json::json!({
-                "golem": {
-                    "node.id.name": "hello",
-                    "srv.comp.wasm.task_package": "task_package", // TODO
-                    "srv.comp.expiration":
-                        (chrono::Utc::now() + chrono::Duration::seconds(600)).timestamp_millis(), // TODO
-                    "node.debug.subnet": "mysubnet",
-                },
-            }),
-            constraints![
-                "golem.inf.mem.gib" > wasm_demand.min_ram_gib,
-                "golem.inf.storage.gib" > wasm_demand.min_storage_gib,
-                "golem.com.pricing.model" == "linear",
-                "golem.node.debug.subnet" == "mysubnet",
-            ]
-            .to_string(),
         )
     }
 }
@@ -287,7 +238,7 @@ impl Actor for Requestor {
 
                 let allocation = payment_api
                     .create_allocation(&model::payment::NewAllocation {
-                        total_amount: (8 as u64).into(), /* TODO */
+                        total_amount: self_copy.budget,
                         timeout: None,
                         make_deposit: false,
                     })

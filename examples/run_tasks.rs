@@ -13,14 +13,16 @@ async fn main() -> Result<(), ()> {
         WebAssembly((1, 0, 0).into()),
         File("test-wasm.zip".into()),
     )
-    .constraints(constraints![
+    .with_max_budget_gnt(5)
+    .with_constraints(constraints![
         "golem.inf.mem.gib" > 0.5,
         "golem.inf.storage.gib" > 1.0
     ])
-    .tasks(vec!["1", "2", "3"].into_iter().map(|i| {
+    .with_tasks(vec!["1", "2", "3"].into_iter().map(|i| {
         commands! {
             deploy;
             start;
+            //copy("input.txt");
             transfer("TODO GFTP URL", "container:/input.txt");
             run("test-wasm", i);
             transfer("container:/output.txt", "TODO GFTP UPLOAD URL");
