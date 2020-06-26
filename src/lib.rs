@@ -131,7 +131,10 @@ impl Requestor {
         Self { timeout, ..self }
     }
     pub fn with_max_budget_gnt<T: Into<BigDecimal>>(self, budget: T) -> Self {
-        Self { budget: budget.into(), ..self }
+        Self {
+            budget: budget.into(),
+            ..self
+        }
     }
     pub fn with_tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
         Self {
