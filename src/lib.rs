@@ -2,6 +2,7 @@ use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
+use std::time::Instant;
 use std::{
     convert::{TryFrom, TryInto},
     time::Duration,
@@ -10,8 +11,13 @@ use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::model::activity::ExeScriptRequest;
 use ya_client::{
-    activity::ActivityRequestorControlApi, market::MarketRequestorApi, model,
-    model::market::Demand, payment::PaymentRequestorApi,
+    activity::ActivityRequestorControlApi,
+    market::MarketRequestorApi,
+    model::{
+        self,
+        market::{proposal::State, AgreementProposal, Demand, RequestorEvent},
+    },
+    payment::PaymentRequestorApi,
 };
 
 mod market_negotiator;
@@ -123,7 +129,7 @@ impl Requestor {
     }
     pub fn with_constraints(self, constraints: Constraints) -> Self {
         Self {
-            constraints,
+            constraints: constraints.clone().and(constraints),
             ..self
         }
     }
@@ -154,7 +160,7 @@ impl Requestor {
                     "node.id.name": self.name,
                     "srv.comp.wasm.task_package": format!("hash:sha3:0x1352137839e66fd48e59e09d03d1f7229fc3150081e98159ab2107c5:{}", image_url), /* TODO!!! */
                     "srv.comp.expiration":
-                        (chrono::Utc::now() + chrono::Duration::minutes(2)).timestamp_millis(), // TODO
+                        (chrono::Utc::now() + chrono::Duration::minutes(10)).timestamp_millis(), // TODO
                 },
             }),
             self.constraints.to_string(),
@@ -219,6 +225,8 @@ impl Actor for Requestor {
         let activity_api: ActivityRequestorControlApi = client.interface().unwrap();
         let payment_api: PaymentRequestorApi = client.interface().unwrap();
         let self_copy = self.clone();
+        let timeout = self.timeout;
+        let providers_num = self.tasks.len();
 
         ctx.spawn(
             async move {
@@ -235,7 +243,6 @@ impl Actor for Requestor {
                 let demand = self_copy.create_demand(&url_to_image_file);
                 //log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
 
-                /* TODO move market_api and payment_api calls to actors */
                 let subscription_id = market_api.subscribe(&demand).await?;
                 log::info!("Subscribed to Market API ( id : {} )", subscription_id);
 
@@ -248,25 +255,116 @@ impl Actor for Requestor {
                     .await?;
                 log::info!("Allocated {} GNT.", &allocation.total_amount);
 
-                /* start actors */
-                let agreement_producer = market_negotiator::AgreementProducer::new(
-                    market_api.clone(),
-                    subscription_id,
-                    demand.clone(),
-                )
-                .start();
                 let payment_manager =
                     payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
+
+                #[derive(Copy, Clone, PartialEq)]
+                enum AgreementSearchState {
+                    WaitForInitialProposals,
+                    AnswerBestProposals,
+                }
+                let mut state = AgreementSearchState::WaitForInitialProposals;
+                let mut proposals = vec![];
+                let time_start = Instant::now();
                 loop {
-                    log::info!("waiting for new agreement");
-                    let agreement_id = agreement_producer
-                        .send(market_negotiator::NewAgreement)
-                        .await??;
-                    log::info!("got new agreement");
-                    let activity_id = activity_api.create_activity(&agreement_id).await?;
-                    let script: ExeScriptRequest = self_copy.tasks[0].clone().try_into()?; /* TODO!!! */
-                    log::debug!("Exe Script: {:?}", script);
-                    let res = activity_api.exec(script, &activity_id).await?;
+                    log::debug!("getting new events, state: {}", state as u8);
+                    let events = market_api
+                        .collect(&subscription_id, Some(2.0), Some(5))
+                        .await?;
+                    log::debug!("received {} events", events.len());
+                    for e in events {
+                        log::debug!("looping");
+                        match e {
+                            RequestorEvent::ProposalEvent {
+                                event_date,
+                                proposal,
+                            } => {
+                                if proposal.state.unwrap_or(State::Initial) == State::Initial {
+                                    if proposal.prev_proposal_id.is_some() {
+                                        log::error!("proposal_id should be empty");
+                                        continue;
+                                    }
+                                    if state != AgreementSearchState::WaitForInitialProposals {
+                                        /* ignore new proposals in other states */
+                                        continue;
+                                    }
+                                    log::debug!("answering with counter proposal");
+                                    let bespoke_proposal =
+                                        match proposal.counter_demand(demand.clone()) {
+                                            Ok(c) => c,
+                                            Err(e) => {
+                                                log::error!("counter_demand error {}", e);
+                                                continue;
+                                            }
+                                        };
+                                    let market_api_clone = market_api.clone();
+                                    let subscription_id_clone = subscription_id.clone();
+                                    Arbiter::spawn(async move {
+                                        let _ = market_api_clone
+                                            .counter_proposal(
+                                                &bespoke_proposal,
+                                                &subscription_id_clone,
+                                            )
+                                            .await;
+                                    });
+                                } else {
+                                    proposals.push(proposal.clone());
+                                    log::debug!(
+                                        "got {} answer(s) to counter proposal",
+                                        proposals.len()
+                                    );
+                                }
+                            }
+                            _ => log::warn!("expected ProposalEvent"),
+                        }
+                    }
+                    /* check if there are enough proposals */
+                    if (time_start.elapsed() > Duration::from_secs(5)
+                        && proposals.len() >= 13 * providers_num / 10 + 2)
+                        || (time_start.elapsed() > Duration::from_secs(30)
+                            && proposals.len() >= providers_num)
+                    {
+                        state = AgreementSearchState::AnswerBestProposals;
+                        /* TODO choose only N best providers here */
+                        for pr in &proposals {
+                            let market_api_clone = market_api.clone();
+                            let activity_api_clone = activity_api.clone();
+                            let agr_id = pr.proposal_id().unwrap().clone();
+                            let issuer = pr.issuer_id().unwrap().clone();
+                            log::debug!("hello issuer: {}", issuer);
+                            let script: ExeScriptRequest =
+                                self_copy.tasks[0].clone().try_into().unwrap(); /* TODO!!! */
+                            log::debug!("Exe Script: {:?}", script);
+                            Arbiter::spawn(async move {
+                                log::debug!("issuer: {}", issuer);
+                                let agr = AgreementProposal::new(
+                                    agr_id.clone(),
+                                    chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
+                                );
+                                log::debug!("creating agreement");
+                                let r = market_api_clone.create_agreement(&agr).await;
+                                log::debug!("confirming agreement {:?}", r);
+                                let _ = market_api_clone.confirm_agreement(&agr_id).await;
+                                log::debug!("waiting for approval");
+                                let _ = market_api_clone
+                                    .wait_for_approval(&agr_id, Some(10.0))
+                                    .await;
+                                log::debug!("new agreement with: {}", issuer);
+                                if let Ok(activity_id) =
+                                    activity_api_clone.create_activity(&agr_id).await
+                                {
+                                    log::debug!("activity created: {}", activity_id);
+                                    let res = activity_api_clone.exec(script, &activity_id).await;
+                                }
+                            });
+                        }
+                        proposals = vec![];
+                    }
+                    if time_start.elapsed() > timeout {
+                        log::warn!("timeout")
+                    }
+                    tokio::time::delay_until(tokio::time::Instant::now() + Duration::from_secs(3))
+                        .await;
                 }
                 Ok::<_, anyhow::Error>(())
             }
@@ -302,7 +400,7 @@ pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> 
     for _ in 0..100000 {
         //progress_bar.inc(1);
         let status = task_session.send(GetStatus).await;
-        log::error!("Here {:?}", status);
+        //log::error!("Here {:?}", status);
         tokio::time::delay_for(Duration::from_millis(950)).await;
     }
     //progress_bar.finish();
