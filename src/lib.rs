@@ -326,7 +326,7 @@ impl Actor for Requestor {
                     {
                         state = AgreementSearchState::AnswerBestProposals;
                         /* TODO choose only N best providers here */
-                        for pr in &proposals {
+                        for pr in &proposals[..providers_num] {
                             let market_api_clone = market_api.clone();
                             let activity_api_clone = activity_api.clone();
                             let agr_id = pr.proposal_id().unwrap().clone();
