@@ -203,29 +203,3 @@ impl Handler<ReleaseAllocation> for PaymentManager {
         Ok(())
     }
 }
-
-async fn allocate_funds_for_task(
-    payment_api: &PaymentRequestorApi,
-    n_tasks: usize,
-) -> anyhow::Result<Addr<PaymentManager>> {
-    let now = Utc::now();
-    let total_amount: BigDecimal = ((n_tasks * 8) as u64).into();
-    let new_allocation = model::payment::NewAllocation {
-        total_amount: total_amount.clone(),
-        timeout: None,
-        make_deposit: false,
-    };
-    let allocation = payment_api.create_allocation(&new_allocation).await?;
-    log::info!("Allocated {} GNT.", &allocation.total_amount);
-
-    let manager = PaymentManager {
-        payment_api: payment_api.clone(),
-        allocation_id: allocation.allocation_id,
-        total_amount,
-        amount_paid: 0.into(),
-        valid_agreements: Default::default(),
-        last_debit_note_event: now.clone(),
-        last_invoice_event: now,
-    };
-    Ok(manager.start())
-}

@@ -20,7 +20,6 @@ use ya_client::{
     payment::PaymentRequestorApi,
 };
 
-mod market_negotiator;
 mod payment_manager;
 
 #[derive(Clone)]
@@ -214,7 +213,16 @@ macro_rules! commands {
 impl Actor for Requestor {
     type Context = Context<Self>;
 
+    /* cleanup:
+    release_allocation();
+    unsubscribe();
+    */
+    fn stopped(&mut self, ctx: &mut Self::Context) {
+        log::error!("TEST");
+    }
+
     fn started(&mut self, ctx: &mut Self::Context) {
+        // TODO!!! from env
         let app_key = "69c892de22d745e489b044f8a4ae35de";
         //let client = ya_client::web::WebClient::with_token(&app_key).unwrap();
         let client = ya_client::web::WebClient::builder()
@@ -234,17 +242,17 @@ impl Actor for Requestor {
                 let url_to_image_file = match &self_copy.location {
                     Location::File(name) => {
                         let image_path = Path::new("test-wasm.zip").canonicalize().unwrap();
-                        log::debug!("Publishing image file {}", image_path.display());
+                        log::debug!("publishing image file {}", image_path.display());
                         gftp::publish(&image_path).await?
                     }
                     Location::URL(url) => Url::parse(&url)?,
                 };
-                log::debug!("Published image as {}", url_to_image_file);
+                log::debug!("published image as {}", url_to_image_file);
                 let demand = self_copy.create_demand(&url_to_image_file);
                 //log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
 
                 let subscription_id = market_api.subscribe(&demand).await?;
-                log::info!("Subscribed to Market API ( id : {} )", subscription_id);
+                log::info!("subscribed to Market API ( id : {} )", subscription_id);
 
                 let allocation = payment_api
                     .create_allocation(&model::payment::NewAllocation {
@@ -253,7 +261,7 @@ impl Actor for Requestor {
                         make_deposit: false,
                     })
                     .await?;
-                log::info!("Allocated {} GNT.", &allocation.total_amount);
+                log::info!("allocated {} GNT.", &allocation.total_amount);
 
                 let payment_manager =
                     payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
@@ -273,7 +281,6 @@ impl Actor for Requestor {
                         .await?;
                     log::debug!("received {} events", events.len());
                     for e in events {
-                        log::debug!("looping");
                         match e {
                             RequestorEvent::ProposalEvent {
                                 event_date,
@@ -334,7 +341,7 @@ impl Actor for Requestor {
                             log::debug!("hello issuer: {}", issuer);
                             let script: ExeScriptRequest =
                                 self_copy.tasks[0].clone().try_into().unwrap(); /* TODO!!! */
-                            log::debug!("Exe Script: {:?}", script);
+                            log::debug!("exe script: {:?}", script);
                             Arbiter::spawn(async move {
                                 log::debug!("issuer: {}", issuer);
                                 let agr = AgreementProposal::new(
@@ -368,7 +375,7 @@ impl Actor for Requestor {
                 }
                 Ok::<_, anyhow::Error>(())
             }
-            .into_actor(self)
+            .into_actor(self) /* TODO send AcceptAgreement */
             .then(|result, ctx, _| fut::ready(())), //.then(|result, ctx, _| {}),
         );
     }
