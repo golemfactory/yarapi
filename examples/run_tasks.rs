@@ -19,15 +19,16 @@ async fn main() -> Result<(), ()> {
         "golem.inf.storage.gib" > 1.0
     ])
     .with_tasks(vec!["1"].into_iter().map(|i| {
+        // TODO to: /workdir/input-{}.txt
         commands! {
-            deploy;
-            start;
-            //copy("input.txt");
-            transfer("TODO GFTP URL", "container:/input.txt");
-            run("test-wasm", i);
-            transfer("container:/output.txt", "TODO GFTP UPLOAD URL");
+            upload(format!("input-{}.txt", i));
+            run("test-wasm", i, format!("/workdir/input-{}.txt", i), format!("/workdir/output-{}.txt", i));
+            download(format!("output-{}.txt", i))
         }
     }))
+    .on_completed(|outputs: Vec<String>| {
+        outputs.iter().for_each(|o| println!("{}", o));
+    })
     .run();
 
     requestor_monitor(requestor_actor).await?;

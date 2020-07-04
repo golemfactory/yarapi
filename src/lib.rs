@@ -1,12 +1,11 @@
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
-use std::{
-    convert::{TryFrom, TryInto},
-    time::Duration,
-};
 use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::model::activity::ExeScriptRequest;
@@ -70,6 +69,8 @@ pub enum Command {
     Start,
     Run(Vec<String>),
     Transfer { from: String, to: String },
+    Upload(String),
+    Download(String),
 }
 
 #[derive(Clone)]
@@ -79,23 +80,58 @@ impl CommandList {
     pub fn new(v: Vec<Command>) -> Self {
         Self(v)
     }
+    pub fn get_upload_files(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|cmd| match cmd {
+                Command::Upload(str) => Some(str.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+    pub fn get_download_files(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .filter_map(|cmd| match cmd {
+                Command::Download(str) => Some(str.clone()),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
-impl TryFrom<CommandList> for ExeScriptRequest {
-    type Error = anyhow::Error;
-    fn try_from(cmd_list: CommandList) -> Result<Self, anyhow::Error> {
+impl CommandList {
+    pub fn to_exe_script(
+        &self,
+        gftp_upload_urls: &HashMap<String, Url>,
+        gftp_download_urls: &HashMap<String, Url>,
+    ) -> Result<ExeScriptRequest, anyhow::Error> {
         let mut res = vec![];
-        for cmd in cmd_list.0 {
+
+        for cmd in vec![Command::Deploy, Command::Start]
+            .iter()
+            .chain(self.0.iter())
+        {
             res.push(match cmd {
                 Command::Deploy => serde_json::json!({ "deploy": {} }),
                 Command::Start => serde_json::json!({ "start": { "args": [] }}),
-                Command::Run(vec) => serde_json::json!({ "run": { // TODO depends on ExeUnit type
-                    "entry_point": "main",
-                    "args": vec
-                }}),
+                Command::Run(vec) => {
+                    serde_json::json!({ "run": { // TODO depends on ExeUnit type
+                        "entry_point": "main", // TODO
+                        "args": &vec[1..]
+                    }})
+                }
                 Command::Transfer { from, to } => serde_json::json!({ "transfer": {
                     "from": from,
                     "to": to,
+                }}),
+                Command::Upload(path) => serde_json::json!({ "transfer": {
+                    "from": gftp_upload_urls[path],
+                    "to": format!("container:/workdir/{}", path), // TODO without workdir
+                }}),
+                Command::Download(path) => serde_json::json!({ "transfer": {
+                    "from": format!("container:/workdir/{}", path),
+                    "to": gftp_download_urls[path],
                 }}),
             })
         }
@@ -112,6 +148,8 @@ pub struct Requestor {
     tasks: Vec<CommandList>,
     timeout: Duration,
     budget: BigDecimal,
+    status: String,
+    on_completed: Option<Arc<dyn FnMut(Vec<String>)>>,
 }
 
 impl Requestor {
@@ -124,6 +162,8 @@ impl Requestor {
             timeout: Duration::from_secs(60),
             tasks: vec![],
             budget: 0.into(),
+            status: "".into(),
+            on_completed: None,
         }
     }
     pub fn with_constraints(self, constraints: Constraints) -> Self {
@@ -142,8 +182,17 @@ impl Requestor {
         }
     }
     pub fn with_tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
+        let tasks_vec: Vec<CommandList> = tasks.collect();
+        let n = tasks_vec.len();
         Self {
-            tasks: tasks.collect(),
+            tasks: tasks_vec,
+            //stdout_results: vec!["".to_string(); n],
+            ..self
+        }
+    }
+    pub fn on_completed<T: FnMut(Vec<String>) + 'static>(self, f: T) -> Self {
+        Self {
+            on_completed: Some(Arc::new(f)),
             ..self
         }
     }
@@ -157,13 +206,41 @@ impl Requestor {
             serde_json::json!({
                 "golem": {
                     "node.id.name": self.name,
-                    "srv.comp.wasm.task_package": format!("hash:sha3:0x1352137839e66fd48e59e09d03d1f7229fc3150081e98159ab2107c5:{}", image_url), /* TODO!!! */
+                    "srv.comp.wasm.task_package": format!("hash:sha3:674eeaed2c83c6a71480016154547d548d20d68371c11f0abfc0eb9d:{}", image_url), /* TODO!!! */
                     "srv.comp.expiration":
                         (chrono::Utc::now() + chrono::Duration::minutes(10)).timestamp_millis(), // TODO
                 },
             }),
             self.constraints.to_string(),
         )
+    }
+    async fn create_gftp_urls(
+        &self,
+    ) -> Result<(HashMap<String, Url>, HashMap<String, Url>), anyhow::Error> {
+        let mut upload_urls = HashMap::new();
+        let mut download_urls = HashMap::new();
+        log::debug!("serve files using gftp");
+        for task in &self.tasks {
+            for name in task.get_upload_files() {
+                match Path::new(&name).canonicalize() {
+                    Ok(path) => {
+                        log::debug!("gftp requestor->provider {:?}", path);
+                        let url = gftp::publish(&path).await?;
+                        log::debug!("upload to provider: {} -> {}", name, url);
+                        upload_urls.insert(name, url);
+                    }
+                    Err(e) => log::error!("file: {} error: {}", name, e),
+                }
+            }
+            for name in task.get_download_files() {
+                log::debug!("gftp provider->requestor {}", name);
+                let path = Path::new(&name);
+                let url = gftp::open_for_upload(&path).await?;
+                log::debug!("download from provider: {} -> {}", name, url);
+                download_urls.insert(name, url);
+            }
+        }
+        Ok((upload_urls, download_urls))
     }
 }
 
@@ -177,6 +254,12 @@ macro_rules! expand_cmd {
     }};
     (transfer ( $e:expr, $f:expr)) => {
         $crate::Command::Transfer { from: $e.to_string(), to: $f.to_string() }
+    };
+    (upload ( $e:expr )) => {
+        $crate::Command::Upload( $e.to_string() )
+    };
+    (download ( $e:expr )) => {
+        $crate::Command::Download( $e.to_string() )
     };
 }
 
@@ -213,17 +296,14 @@ macro_rules! commands {
 impl Actor for Requestor {
     type Context = Context<Self>;
 
-    /* cleanup:
+    /* TODO cleanup:
     release_allocation();
     unsubscribe();
     */
-    fn stopped(&mut self, ctx: &mut Self::Context) {
-        log::error!("TEST");
-    }
 
     fn started(&mut self, ctx: &mut Self::Context) {
         // TODO!!! from env
-        let app_key = "69c892de22d745e489b044f8a4ae35de";
+        let app_key = std::env::var("YAGNA_APPKEY").unwrap();
         //let client = ya_client::web::WebClient::with_token(&app_key).unwrap();
         let client = ya_client::web::WebClient::builder()
             .auth_token(&app_key)
@@ -248,6 +328,7 @@ impl Actor for Requestor {
                     Location::URL(url) => Url::parse(&url)?,
                 };
                 log::debug!("published image as {}", url_to_image_file);
+                let (gftp_upload_urls, gftp_download_urls) = self_copy.create_gftp_urls().await?;
                 let demand = self_copy.create_demand(&url_to_image_file);
                 //log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
 
@@ -339,8 +420,10 @@ impl Actor for Requestor {
                             let agr_id = pr.proposal_id().unwrap().clone();
                             let issuer = pr.issuer_id().unwrap().clone();
                             log::debug!("hello issuer: {}", issuer);
-                            let script: ExeScriptRequest =
-                                self_copy.tasks[0].clone().try_into().unwrap(); /* TODO!!! */
+                            //let script: ExeScriptRequest =
+                            //    self_copy.tasks[0].clone().try_into().unwrap(); /* TODO!!! */
+                            let script = self_copy.tasks[0]
+                                .to_exe_script(&gftp_upload_urls, &gftp_download_urls)?;
                             log::debug!("exe script: {:?}", script);
                             Arbiter::spawn(async move {
                                 log::debug!("issuer: {}", issuer);
@@ -349,8 +432,9 @@ impl Actor for Requestor {
                                     chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
                                 );
                                 log::debug!("creating agreement");
+                                /* TODO handle errors */
                                 let r = market_api_clone.create_agreement(&agr).await;
-                                log::debug!("confirming agreement {:?}", r);
+                                log::debug!("create agreement result: {:?}; confirming", r);
                                 let _ = market_api_clone.confirm_agreement(&agr_id).await;
                                 log::debug!("waiting for approval");
                                 let _ = market_api_clone
@@ -366,6 +450,7 @@ impl Actor for Requestor {
                             });
                         }
                         proposals = vec![];
+                        //let events = market_api.unsubscribe(&subscription_id).await;
                     }
                     if time_start.elapsed() > timeout {
                         log::warn!("timeout")
