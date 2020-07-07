@@ -1,5 +1,4 @@
-/* actor code from gwasm-runner */
-
+/* source code from gwasm-runner */
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};

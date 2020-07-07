@@ -1,16 +1,17 @@
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::HashMap;
+//use indicatif::{ProgressBar, ProgressStyle};
+use futures::{SinkExt, StreamExt};
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
+use ya_client::activity::ActivityRequestorApi;
 use ya_client::model::activity::ExeScriptRequest;
 use ya_client::{
-    activity::ActivityRequestorControlApi,
     market::MarketRequestorApi,
     model::{
         self,
@@ -19,37 +20,11 @@ use ya_client::{
     payment::PaymentRequestorApi,
 };
 
+/* TODO don't use PaymentManager from gwasm-runner */
+#[allow(dead_code)]
+#[allow(unused_variables)]
+#[allow(unused_must_use)]
 mod payment_manager;
-
-#[derive(Clone)]
-pub enum WasmRuntime {
-    Wasi(i32), /* Wasi version */
-}
-
-#[derive(Clone)]
-pub struct ImageSpec {
-    runtime: WasmRuntime,
-    /* TODO */
-}
-
-impl ImageSpec {
-    pub fn from_github<T: Into<String>>(_github_repository: T) -> Self {
-        Self {
-            runtime: WasmRuntime::Wasi(1),
-            /* TODO http URL? */
-        }
-        /* TODO connect and download image specification */
-    }
-    pub fn from_url<T: Into<String>>(url: T) -> Self {
-        Self {
-            runtime: WasmRuntime::Wasi(1),
-            /* TODO: gftp URL? */
-        }
-    }
-    pub fn runtime(self, runtime: WasmRuntime) -> Self {
-        Self { runtime }
-    }
-}
 
 #[derive(Clone)]
 pub enum Location {
@@ -101,23 +76,25 @@ impl CommandList {
 }
 
 impl CommandList {
-    pub fn to_exe_script(
+    pub fn to_exe_script_and_info(
         &self,
         gftp_upload_urls: &HashMap<String, Url>,
         gftp_download_urls: &HashMap<String, Url>,
-    ) -> Result<ExeScriptRequest, anyhow::Error> {
+    ) -> Result<(ExeScriptRequest, usize, HashSet<usize>), anyhow::Error> {
         let mut res = vec![];
-
-        for cmd in vec![Command::Deploy, Command::Start]
+        let mut run_ind = HashSet::new();
+        for (i, cmd) in vec![Command::Deploy, Command::Start]
             .iter()
             .chain(self.0.iter())
+            .enumerate()
         {
             res.push(match cmd {
                 Command::Deploy => serde_json::json!({ "deploy": {} }),
                 Command::Start => serde_json::json!({ "start": { "args": [] }}),
                 Command::Run(vec) => {
+                    run_ind.insert(i);
                     serde_json::json!({ "run": { // TODO depends on ExeUnit type
-                        "entry_point": "main", // TODO
+                        "entry_point": vec[0],
                         "args": &vec[1..]
                     }})
                 }
@@ -125,9 +102,10 @@ impl CommandList {
                     "from": from,
                     "to": to,
                 }}),
+                // TODO!!! container paths should be configurable (not only /workdir/)
                 Command::Upload(path) => serde_json::json!({ "transfer": {
                     "from": gftp_upload_urls[path],
-                    "to": format!("container:/workdir/{}", path), // TODO without workdir
+                    "to": format!("container:/workdir/{}", path),
                 }}),
                 Command::Download(path) => serde_json::json!({ "transfer": {
                     "from": format!("container:/workdir/{}", path),
@@ -135,7 +113,11 @@ impl CommandList {
                 }}),
             })
         }
-        Ok(ExeScriptRequest::new(serde_json::to_string_pretty(&res)?))
+        Ok((
+            ExeScriptRequest::new(serde_json::to_string_pretty(&res)?),
+            res.len(),
+            run_ind,
+        ))
     }
 }
 
@@ -149,7 +131,7 @@ pub struct Requestor {
     timeout: Duration,
     budget: BigDecimal,
     status: String,
-    on_completed: Option<Arc<dyn FnMut(Vec<String>)>>,
+    on_completed: Option<Arc<dyn Fn(Vec<String>)>>,
 }
 
 impl Requestor {
@@ -183,14 +165,14 @@ impl Requestor {
     }
     pub fn with_tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
         let tasks_vec: Vec<CommandList> = tasks.collect();
-        let n = tasks_vec.len();
+        //let n = tasks_vec.len();
         Self {
             tasks: tasks_vec,
             //stdout_results: vec!["".to_string(); n],
             ..self
         }
     }
-    pub fn on_completed<T: FnMut(Vec<String>) + 'static>(self, f: T) -> Self {
+    pub fn on_completed<T: Fn(Vec<String>) + 'static>(self, f: T) -> Self {
         Self {
             on_completed: Some(Arc::new(f)),
             ..self
@@ -219,7 +201,7 @@ impl Requestor {
     ) -> Result<(HashMap<String, Url>, HashMap<String, Url>), anyhow::Error> {
         let mut upload_urls = HashMap::new();
         let mut download_urls = HashMap::new();
-        log::debug!("serve files using gftp");
+        log::debug!("serving files using gftp");
         for task in &self.tasks {
             for name in task.get_upload_files() {
                 match Path::new(&name).canonicalize() {
@@ -297,31 +279,30 @@ impl Actor for Requestor {
     type Context = Context<Self>;
 
     /* TODO cleanup:
-    release_allocation();
+    release_allocation(); // in payment_manager?
     unsubscribe();
     */
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        // TODO!!! from env
         let app_key = std::env::var("YAGNA_APPKEY").unwrap();
         //let client = ya_client::web::WebClient::with_token(&app_key).unwrap();
         let client = ya_client::web::WebClient::builder()
             .auth_token(&app_key)
             .build();
-        /* TODO URLs from env */
         let market_api: MarketRequestorApi = client.interface().unwrap();
-        let activity_api: ActivityRequestorControlApi = client.interface().unwrap();
+        //let activity_api: ActivityRequestorControlApi = client.interface().unwrap();
+        let activity_api: ActivityRequestorApi = client.interface().unwrap();
         let payment_api: PaymentRequestorApi = client.interface().unwrap();
         let self_copy = self.clone();
-        let timeout = self.timeout;
+        //let timeout = self.timeout;
         let providers_num = self.tasks.len();
 
         ctx.spawn(
             async move {
-                /* publish image file TODO real file */
+                /* publish image file */
                 let url_to_image_file = match &self_copy.location {
                     Location::File(name) => {
-                        let image_path = Path::new("test-wasm.zip").canonicalize().unwrap();
+                        let image_path = Path::new(name).canonicalize().unwrap();
                         log::debug!("publishing image file {}", image_path.display());
                         gftp::publish(&image_path).await?
                     }
@@ -344,18 +325,20 @@ impl Actor for Requestor {
                     .await?;
                 log::info!("allocated {} GNT.", &allocation.total_amount);
 
-                let payment_manager =
+                /* TODO accept invoice after computations */
+                let _payment_manager =
                     payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
 
                 #[derive(Copy, Clone, PartialEq)]
-                enum AgreementSearchState {
+                enum ComputationState {
                     WaitForInitialProposals,
                     AnswerBestProposals,
+                    Done,
                 }
-                let mut state = AgreementSearchState::WaitForInitialProposals;
+                let mut state = ComputationState::WaitForInitialProposals;
                 let mut proposals = vec![];
                 let time_start = Instant::now();
-                loop {
+                while state != ComputationState::Done {
                     log::debug!("getting new events, state: {}", state as u8);
                     let events = market_api
                         .collect(&subscription_id, Some(2.0), Some(5))
@@ -364,7 +347,7 @@ impl Actor for Requestor {
                     for e in events {
                         match e {
                             RequestorEvent::ProposalEvent {
-                                event_date,
+                                event_date: _,
                                 proposal,
                             } => {
                                 if proposal.state.unwrap_or(State::Initial) == State::Initial {
@@ -372,7 +355,7 @@ impl Actor for Requestor {
                                         log::error!("proposal_id should be empty");
                                         continue;
                                     }
-                                    if state != AgreementSearchState::WaitForInitialProposals {
+                                    if state != ComputationState::WaitForInitialProposals {
                                         /* ignore new proposals in other states */
                                         continue;
                                     }
@@ -412,19 +395,21 @@ impl Actor for Requestor {
                         || (time_start.elapsed() > Duration::from_secs(30)
                             && proposals.len() >= providers_num)
                     {
-                        state = AgreementSearchState::AnswerBestProposals;
+                        let (output_tx, output_rx) =
+                            futures::channel::mpsc::unbounded::<(usize, String)>();
+                        state = ComputationState::AnswerBestProposals;
                         /* TODO choose only N best providers here */
-                        for pr in &proposals[..providers_num] {
+                        for i in 0..providers_num {
+                            let pr = &proposals[i];
                             let market_api_clone = market_api.clone();
                             let activity_api_clone = activity_api.clone();
                             let agr_id = pr.proposal_id().unwrap().clone();
                             let issuer = pr.issuer_id().unwrap().clone();
                             log::debug!("hello issuer: {}", issuer);
-                            //let script: ExeScriptRequest =
-                            //    self_copy.tasks[0].clone().try_into().unwrap(); /* TODO!!! */
-                            let script = self_copy.tasks[0]
-                                .to_exe_script(&gftp_upload_urls, &gftp_download_urls)?;
+                            let (script, num_cmds, run_ind) = self_copy.tasks[i]
+                                .to_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
                             log::debug!("exe script: {:?}", script);
+                            let mut output_tx_clone = output_tx.clone();
                             Arbiter::spawn(async move {
                                 log::debug!("issuer: {}", issuer);
                                 let agr = AgreementProposal::new(
@@ -442,26 +427,108 @@ impl Actor for Requestor {
                                     .await;
                                 log::debug!("new agreement with: {}", issuer);
                                 if let Ok(activity_id) =
-                                    activity_api_clone.create_activity(&agr_id).await
+                                    activity_api_clone.control().create_activity(&agr_id).await
                                 {
                                     log::debug!("activity created: {}", activity_id);
-                                    let res = activity_api_clone.exec(script, &activity_id).await;
+                                    if let Ok(batch_id) = activity_api_clone
+                                        .control()
+                                        .exec(script, &activity_id)
+                                        .await
+                                    {
+                                        let mut all_res = vec![];
+                                        loop {
+                                            log::info!("getting state");
+                                            if let Ok(state) = activity_api_clone
+                                                .state()
+                                                .get_state(&activity_id)
+                                                .await
+                                            {
+                                                if !state.alive() {
+                                                    break;
+                                                }
+                                                if let Ok(res) = activity_api_clone
+                                                    .control()
+                                                    .get_exec_batch_results(
+                                                        &activity_id,
+                                                        &batch_id,
+                                                        None,
+                                                        None,
+                                                    )
+                                                    .await
+                                                {
+                                                    log::debug!("batch_results: {}", res.len());
+                                                    all_res = res;
+                                                }
+                                                if all_res.len() >= num_cmds {
+                                                    break;
+                                                }
+                                            } else {
+                                                break;
+                                            }
+                                            tokio::time::delay_until(
+                                                tokio::time::Instant::now()
+                                                    + Duration::from_secs(3),
+                                            )
+                                            .await;
+                                        }
+                                        log::debug!("activity finished: {}", activity_id);
+                                        let only_stdout = |txt: String| {
+                                            if txt.starts_with("stdout: ") {
+                                                if let Some(pos) = txt.find("\nstderr:") {
+                                                    &txt[8..pos]
+                                                } else {
+                                                    &txt[8..]
+                                                }
+                                            } else {
+                                                ""
+                                            }
+                                            .to_string()
+                                        };
+                                        let output = all_res
+                                            .into_iter()
+                                            .enumerate()
+                                            .filter_map(|(i, r)| match run_ind.contains(&i) {
+                                                // stdout: {}\nstdout;
+                                                true => Some(r.message.unwrap_or("".to_string()))
+                                                    .map(only_stdout),
+                                                false => None,
+                                            })
+                                            .collect();
+                                        let _ = output_tx_clone.send((i, output)).await;
+                                    // TODO not sure if this should be here: activity_api_clone
+                                    // .control().destroy_activity(&activity_id).await; */
+                                    } else {
+                                        log::error!("exec failed!");
+                                    }
                                 }
                             });
                         }
                         proposals = vec![];
+                        let mut outputs = vec!["".to_string(); providers_num];
+                        output_rx
+                            .take(providers_num)
+                            .for_each(|(prov_id, output)| {
+                                outputs[prov_id] = output;
+                                futures::future::ready(())
+                            })
+                            .await;
+                        log::info!("all activities finished");
+                        if let Some(fun) = self_copy.on_completed.clone() {
+                            fun(outputs);
+                            state = ComputationState::Done;
+                        }
                         //let events = market_api.unsubscribe(&subscription_id).await;
                     }
-                    if time_start.elapsed() > timeout {
+                    /*if time_start.elapsed() > timeout {
                         log::warn!("timeout")
-                    }
+                    }*/
                     tokio::time::delay_until(tokio::time::Instant::now() + Duration::from_secs(3))
                         .await;
                 }
                 Ok::<_, anyhow::Error>(())
             }
             .into_actor(self) /* TODO send AcceptAgreement */
-            .then(|result, ctx, _| fut::ready(())), //.then(|result, ctx, _| {}),
+            .then(|_result, _ctx, _| fut::ready(())),
         );
     }
 }
@@ -475,11 +542,12 @@ impl Message for GetStatus {
 impl Handler<GetStatus> for Requestor {
     type Result = f32;
 
-    fn handle(&mut self, msg: GetStatus, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: GetStatus, _ctx: &mut Self::Context) -> Self::Result {
         1.0 // TODO
     }
 }
 
+/*
 pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> {
     /* TODO attach to the actor */
     let progress_bar = ProgressBar::new(100);
@@ -498,3 +566,4 @@ pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> 
     //progress_bar.finish();
     Ok(())
 }
+*/
