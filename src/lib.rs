@@ -201,24 +201,24 @@ impl Requestor {
     ) -> Result<(HashMap<String, Url>, HashMap<String, Url>), anyhow::Error> {
         let mut upload_urls = HashMap::new();
         let mut download_urls = HashMap::new();
-        log::debug!("serving files using gftp");
+        log::info!("serving files using gftp");
         for task in &self.tasks {
             for name in task.get_upload_files() {
                 match Path::new(&name).canonicalize() {
                     Ok(path) => {
-                        log::debug!("gftp requestor->provider {:?}", path);
+                        log::info!("gftp requestor->provider {:?}", path);
                         let url = gftp::publish(&path).await?;
-                        log::debug!("upload to provider: {} -> {}", name, url);
+                        log::debug!("upload to provider: {}", url);
                         upload_urls.insert(name, url);
                     }
                     Err(e) => log::error!("file: {} error: {}", name, e),
                 }
             }
             for name in task.get_download_files() {
-                log::debug!("gftp provider->requestor {}", name);
+                log::info!("gftp provider->requestor {}", name);
                 let path = Path::new(&name);
                 let url = gftp::open_for_upload(&path).await?;
-                log::debug!("download from provider: {} -> {}", name, url);
+                log::info!("download from provider: {}", url);
                 download_urls.insert(name, url);
             }
         }
@@ -303,12 +303,12 @@ impl Actor for Requestor {
                 let url_to_image_file = match &self_copy.location {
                     Location::File(name) => {
                         let image_path = Path::new(name).canonicalize().unwrap();
-                        log::debug!("publishing image file {}", image_path.display());
+                        log::info!("publishing image file {}", image_path.display());
                         gftp::publish(&image_path).await?
                     }
                     Location::URL(url) => Url::parse(&url)?,
                 };
-                log::debug!("published image as {}", url_to_image_file);
+                log::info!("published image as {}", url_to_image_file);
                 let (gftp_upload_urls, gftp_download_urls) = self_copy.create_gftp_urls().await?;
                 let demand = self_copy.create_demand(&url_to_image_file);
                 //log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
@@ -339,11 +339,11 @@ impl Actor for Requestor {
                 let mut proposals = vec![];
                 let time_start = Instant::now();
                 while state != ComputationState::Done {
-                    log::debug!("getting new events, state: {}", state as u8);
+                    log::info!("getting new events, state: {}", state as u8);
                     let events = market_api
                         .collect(&subscription_id, Some(2.0), Some(5))
                         .await?;
-                    log::debug!("received {} events", events.len());
+                    log::info!("received {} events", events.len());
                     for e in events {
                         match e {
                             RequestorEvent::ProposalEvent {
@@ -359,7 +359,7 @@ impl Actor for Requestor {
                                         /* ignore new proposals in other states */
                                         continue;
                                     }
-                                    log::debug!("answering with counter proposal");
+                                    log::info!("answering with counter proposal");
                                     let bespoke_proposal =
                                         match proposal.counter_demand(demand.clone()) {
                                             Ok(c) => c,
@@ -399,6 +399,7 @@ impl Actor for Requestor {
                             futures::channel::mpsc::unbounded::<(usize, String)>();
                         state = ComputationState::AnswerBestProposals;
                         /* TODO choose only N best providers here */
+                        log::debug!("trying to sign agreements with providers");
                         for i in 0..providers_num {
                             let pr = &proposals[i];
                             let market_api_clone = market_api.clone();
@@ -408,7 +409,7 @@ impl Actor for Requestor {
                             log::debug!("hello issuer: {}", issuer);
                             let (script, num_cmds, run_ind) = self_copy.tasks[i]
                                 .to_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
-                            log::debug!("exe script: {:?}", script);
+                            log::info!("exe script: {:?}", script);
                             let mut output_tx_clone = output_tx.clone();
                             Arbiter::spawn(async move {
                                 log::debug!("issuer: {}", issuer);
@@ -416,20 +417,20 @@ impl Actor for Requestor {
                                     agr_id.clone(),
                                     chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
                                 );
-                                log::debug!("creating agreement");
+                                log::info!("creating agreement");
                                 /* TODO handle errors */
                                 let r = market_api_clone.create_agreement(&agr).await;
-                                log::debug!("create agreement result: {:?}; confirming", r);
+                                log::info!("create agreement result: {:?}; confirming", r);
                                 let _ = market_api_clone.confirm_agreement(&agr_id).await;
-                                log::debug!("waiting for approval");
+                                log::info!("waiting for approval");
                                 let _ = market_api_clone
                                     .wait_for_approval(&agr_id, Some(10.0))
                                     .await;
-                                log::debug!("new agreement with: {}", issuer);
+                                log::info!("new agreement with: {}", issuer);
                                 if let Ok(activity_id) =
                                     activity_api_clone.control().create_activity(&agr_id).await
                                 {
-                                    log::debug!("activity created: {}", activity_id);
+                                    log::info!("activity created: {}", activity_id);
                                     if let Ok(batch_id) = activity_api_clone
                                         .control()
                                         .exec(script, &activity_id)
@@ -437,7 +438,10 @@ impl Actor for Requestor {
                                     {
                                         let mut all_res = vec![];
                                         loop {
-                                            log::info!("getting state");
+                                            log::info!(
+                                                "getting state of running activity {}",
+                                                activity_id
+                                            );
                                             if let Ok(state) = activity_api_clone
                                                 .state()
                                                 .get_state(&activity_id)
@@ -471,7 +475,7 @@ impl Actor for Requestor {
                                             )
                                             .await;
                                         }
-                                        log::debug!("activity finished: {}", activity_id);
+                                        log::info!("activity finished: {}", activity_id);
                                         let only_stdout = |txt: String| {
                                             if txt.starts_with("stdout: ") {
                                                 if let Some(pos) = txt.find("\nstderr:") {

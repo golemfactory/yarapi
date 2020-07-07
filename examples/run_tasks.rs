@@ -16,7 +16,7 @@ async fn main() -> Result<(), ()> {
         "golem.inf.mem.gib" > 0.5,
         "golem.inf.storage.gib" > 1.0
     ])
-    .with_tasks(vec!["1"].into_iter().map(|i| {
+    .with_tasks(vec!["1", "2"].into_iter().map(|i| {
         commands! {
             upload(format!("input-{}.txt", i));
             run("main", i, format!("/workdir/input-{}.txt", i), format!("/workdir/output-{}.txt", i));
