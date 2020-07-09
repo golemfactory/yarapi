@@ -1,5 +1,5 @@
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
-use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Location::Package, Requestor};
+use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Package::Archive, Requestor};
 
 #[actix_rt::main]
 async fn main() -> Result<(), ()> {
@@ -9,7 +9,7 @@ async fn main() -> Result<(), ()> {
     let _requestor_actor = Requestor::new(
         "My Requestor",
         WebAssembly((1, 0, 0).into()),
-        Package("test-wasm.zip".into()),
+        Archive("test-wasm.zip".into()),
     )
     .with_max_budget_gnt(5)
     .with_constraints(constraints![
