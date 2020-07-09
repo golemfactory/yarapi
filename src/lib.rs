@@ -3,10 +3,11 @@ use bigdecimal::BigDecimal;
 //use indicatif::{ProgressBar, ProgressStyle};
 use futures::{SinkExt, StreamExt};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+use std::fs;
 use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::activity::ActivityRequestorApi;
@@ -19,6 +20,7 @@ use ya_client::{
     },
     payment::PaymentRequestorApi,
 };
+use sha3::{Digest, Sha3_512};
 
 /* TODO don't use PaymentManager from gwasm-runner */
 #[allow(dead_code)]
@@ -28,8 +30,17 @@ mod payment_manager;
 
 #[derive(Clone)]
 pub enum Location {
-    File(String),
-    URL(String),
+    /// Path to Yagna package. Hash information will be computed automatically.
+    Package(PathBuf),
+    /// URL to a resource obtained separately. Must include hash information
+    /// prepended to the actual path.
+    ///
+    /// # Example:
+    /// ```rust
+    /// use ya_requestor_sdk::Location;
+    /// let url = Location::Url("hash:beefdead:gftp:deadbeef/deadbeef".to_string());
+    /// ```
+    Url(String),
 }
 
 #[derive(Clone)]
@@ -105,10 +116,10 @@ impl CommandList {
                 // TODO!!! container paths should be configurable (not only /workdir/)
                 Command::Upload(path) => serde_json::json!({ "transfer": {
                     "from": gftp_upload_urls[path],
-                    "to": format!("container:/workdir/{}", path),
+                    "to": format!("container:/{}", path),
                 }}),
                 Command::Download(path) => serde_json::json!({ "transfer": {
-                    "from": format!("container:/workdir/{}", path),
+                    "from": format!("container:/{}", path),
                     "to": gftp_download_urls[path],
                 }}),
             })
@@ -184,11 +195,19 @@ impl Requestor {
     fn create_demand(&self, image_url: &Url) -> Demand {
         // let hex = format!("{:x}", <sha3::Sha3_224 as Digest>::digest(image.as_slice()));
         // "golem.node.debug.subnet" == "mysubnet", TODO
+        let pkg_url = match &self.location {
+            Location::Package(path) => {
+                let contents = fs::read(path).unwrap();
+                let digest = Sha3_512::digest(&contents);
+                format!("hash:sha3:{:x}:{}", digest, image_url)
+            }
+            Location::Url {..} => format!("{}", image_url),
+        };
         Demand::new(
             serde_json::json!({
                 "golem": {
                     "node.id.name": self.name,
-                    "srv.comp.wasm.task_package": format!("hash:sha3:674eeaed2c83c6a71480016154547d548d20d68371c11f0abfc0eb9d:{}", image_url), /* TODO!!! */
+                    "srv.comp.wasm.task_package": pkg_url,
                     "srv.comp.expiration":
                         (chrono::Utc::now() + chrono::Duration::minutes(10)).timestamp_millis(), // TODO
                 },
@@ -301,12 +320,12 @@ impl Actor for Requestor {
             async move {
                 /* publish image file */
                 let url_to_image_file = match &self_copy.location {
-                    Location::File(name) => {
-                        let image_path = Path::new(name).canonicalize().unwrap();
+                    Location::Package(path) => {
+                        let image_path = path.canonicalize().unwrap();
                         log::info!("publishing image file {}", image_path.display());
                         gftp::publish(&image_path).await?
                     }
-                    Location::URL(url) => Url::parse(&url)?,
+                    Location::Url(url) => Url::parse(&url)?,
                 };
                 log::info!("published image as {}", url_to_image_file);
                 let (gftp_upload_urls, gftp_download_urls) = self_copy.create_gftp_urls().await?;

@@ -22,3 +22,4 @@ tokio = { version = "0.2.10" }
 url = "2.1.1"
 ya-agreement-utils = "0.1"
 ya-client = "0.3"
+sha3 = "0.9.1"
