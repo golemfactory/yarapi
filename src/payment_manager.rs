@@ -151,8 +151,8 @@ impl PaymentManager {
     }
 }
 
-struct AcceptAgreement {
-    agreement_id: String,
+pub struct AcceptAgreement {
+    pub agreement_id: String,
 }
 
 impl Message for AcceptAgreement {
@@ -168,7 +168,7 @@ impl Handler<AcceptAgreement> for PaymentManager {
     }
 }
 
-struct GetPending;
+pub struct GetPending;
 
 impl Message for GetPending {
     type Result = usize;

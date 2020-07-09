@@ -2,12 +2,13 @@ use actix::prelude::*;
 use bigdecimal::BigDecimal;
 //use indicatif::{ProgressBar, ProgressStyle};
 use futures::{SinkExt, StreamExt};
+use sha3::{Digest, Sha3_512};
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
-use std::fs;
 use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::activity::ActivityRequestorApi;
@@ -20,7 +21,6 @@ use ya_client::{
     },
     payment::PaymentRequestorApi,
 };
-use sha3::{Digest, Sha3_512};
 
 /* TODO don't use PaymentManager from gwasm-runner */
 #[allow(dead_code)]
@@ -201,7 +201,7 @@ impl Requestor {
                 let digest = Sha3_512::digest(&contents);
                 format!("hash:sha3:{:x}:{}", digest, image_url)
             }
-            Location::Url {..} => format!("{}", image_url),
+            Location::Url { .. } => format!("{}", image_url),
         };
         Demand::new(
             serde_json::json!({
@@ -345,7 +345,7 @@ impl Actor for Requestor {
                 log::info!("allocated {} GNT.", &allocation.total_amount);
 
                 /* TODO accept invoice after computations */
-                let _payment_manager =
+                let payment_manager =
                     payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
 
                 #[derive(Copy, Clone, PartialEq)]
@@ -430,6 +430,7 @@ impl Actor for Requestor {
                                 .to_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
                             log::info!("exe script: {:?}", script);
                             let mut output_tx_clone = output_tx.clone();
+                            let payment_manager_clone = payment_manager.clone();
                             Arbiter::spawn(async move {
                                 log::debug!("issuer: {}", issuer);
                                 let agr = AgreementProposal::new(
@@ -517,9 +518,14 @@ impl Actor for Requestor {
                                                 false => None,
                                             })
                                             .collect();
+                                        let _ = payment_manager_clone
+                                            .send(payment_manager::AcceptAgreement {
+                                                agreement_id: agr_id.clone(),
+                                            })
+                                            .await;
+                                        // TODO not sure if this should be here: activity_api_clone
+                                        // .control().destroy_activity(&activity_id).await; */
                                         let _ = output_tx_clone.send((i, output)).await;
-                                    // TODO not sure if this should be here: activity_api_clone
-                                    // .control().destroy_activity(&activity_id).await; */
                                     } else {
                                         log::error!("exec failed!");
                                     }
@@ -540,6 +546,14 @@ impl Actor for Requestor {
                             fun(outputs);
                             state = ComputationState::Done;
                         }
+                        loop {
+                            let r = payment_manager.send(payment_manager::GetPending).await?;
+                            log::info!("pending payments: {}", r);
+                            if r <= 0 {
+                                break;
+                            }
+                            tokio::time::delay_for(Duration::from_secs(1)).await;
+                        }
                         //let events = market_api.unsubscribe(&subscription_id).await;
                     }
                     /*if time_start.elapsed() > timeout {
@@ -550,12 +564,13 @@ impl Actor for Requestor {
                 }
                 Ok::<_, anyhow::Error>(())
             }
-            .into_actor(self) /* TODO send AcceptAgreement */
+            .into_actor(self)
             .then(|_result, _ctx, _| fut::ready(())),
         );
     }
 }
 
+/*
 struct GetStatus;
 
 impl Message for GetStatus {
@@ -570,7 +585,6 @@ impl Handler<GetStatus> for Requestor {
     }
 }
 
-/*
 pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> {
     /* TODO attach to the actor */
     let progress_bar = ProgressBar::new(100);
