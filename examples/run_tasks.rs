@@ -4,7 +4,7 @@ use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Location::File
 #[actix_rt::main]
 async fn main() -> Result<(), ()> {
     let _ = dotenv::dotenv().ok();
-    env_logger::init();
+    env_logger::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let _requestor_actor = Requestor::new(
         "My Requestor",
