@@ -13,7 +13,7 @@ pub enum Package {
     /// # Example:
     /// ```rust
     /// use ya_requestor_sdk::Package;
-    /// let package = Package::Url { hash: "beefdead".to_string(), url: "gftp:deadbeef/deadbeef".to_string() };
+    /// let package = Package::Url { digest: "beefdead".to_string(), url: "gftp:deadbeef/deadbeef".to_string() };
     /// ```
     Url { digest: String, url: String },
 }
