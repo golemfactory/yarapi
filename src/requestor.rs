@@ -272,11 +272,6 @@ macro_rules! commands {
 impl Actor for Requestor {
     type Context = Context<Self>;
 
-    /* TODO cleanup:
-    release_allocation(); // in payment_manager?
-    unsubscribe();
-    */
-
     fn started(&mut self, ctx: &mut Self::Context) {
         let app_key = std::env::var("YAGNA_APPKEY").unwrap();
         //let client = ya_client::web::WebClient::with_token(&app_key).unwrap();
@@ -309,7 +304,6 @@ impl Actor for Requestor {
                     .await?;
                 log::info!("allocated {} GNT.", &allocation.total_amount);
 
-                /* TODO accept invoice after computations */
                 let payment_manager =
                     payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
 
@@ -519,7 +513,8 @@ impl Actor for Requestor {
                             }
                             tokio::time::delay_for(Duration::from_secs(1)).await;
                         }
-                        //let events = market_api.unsubscribe(&subscription_id).await;
+                        // TODO payment_manager.send(payment_manager::ReleaseAllocation)
+                        // TODO market_api.unsubscribe(&subscription_id).await;
                     }
                     /*if time_start.elapsed() > timeout {
                         log::warn!("timeout")
@@ -535,6 +530,7 @@ impl Actor for Requestor {
     }
 }
 
+/*
 struct GetStatus;
 
 impl Message for GetStatus {
@@ -549,7 +545,6 @@ impl Handler<GetStatus> for Requestor {
     }
 }
 
-/*
 pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> {
     /* TODO attach to the actor */
     let progress_bar = ProgressBar::new(100);
