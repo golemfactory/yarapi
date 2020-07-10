@@ -119,7 +119,7 @@ impl Requestor {
                     Ok(path) => {
                         log::info!("gftp requestor->provider {:?}", path);
                         let url = gftp::publish(&path).await?;
-                        log::debug!("upload to provider: {}", url);
+                        log::info!("upload to provider: {}", url);
                         upload_urls.insert(name, url);
                     }
                     Err(e) => log::error!("file: {} error: {}", name, e),
@@ -350,8 +350,11 @@ impl Actor for Requestor {
                                                 agreement_id: agr_id.clone(),
                                             })
                                             .await;
-                                        // TODO not sure if this should be here: activity_api_clone
-                                        // .control().destroy_activity(&activity_id).await; */
+                                        // TODO not sure if this is not called too early
+                                        let _ = activity_api_clone
+                                            .control()
+                                            .destroy_activity(&activity_id)
+                                            .await;
                                         let _ = output_tx_clone.send((i, output)).await;
                                     } else {
                                         log::error!("exec failed!");
@@ -390,6 +393,7 @@ impl Actor for Requestor {
                     tokio::time::delay_until(tokio::time::Instant::now() + Duration::from_secs(3))
                         .await;
                 }
+                log::info!("all tasks completed and paid for.");
                 Ok::<_, anyhow::Error>(())
             }
             .into_actor(self)
