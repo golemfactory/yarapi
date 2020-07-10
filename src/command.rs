@@ -6,16 +6,46 @@ use std::{
 use url::Url;
 use ya_client::model::activity::ExeScriptRequest;
 
+/// Represents supported exe-script commands.
+///
+/// Note that when specifying the `CommandList`, specifying
+/// `Deploy` and `Start` explicitly is optional; therefore,
+/// skipping those two is fine.
 #[derive(Clone)]
 pub enum Command {
+    /// Deploy the container.
     Deploy,
+    /// Start the container.
     Start, // TODO add args
     Run(Vec<String>),
+    /// Transfer from `from` url to `to` url.
+    ///
+    /// TODO explain which urls are valid: [`file:/`, `http://`, `gftp:/`, `container:/`].
     Transfer { from: String, to: String },
+    /// Path to file(s) to upload.
     Upload(String),
+    /// Path to file(s) to download.
     Download(String),
 }
 
+/// Represents a list of commands to execute at the remote node.
+/// This is equivalent to the exe-script you'd write out manually when
+/// manually launching a Yagna task.
+///
+/// Note that when specifying the `CommandList`, specifying
+/// `Deploy` and `Start` explicitly is optional; therefore,
+/// skipping those two is fine.
+///
+/// ## Example:
+/// ```rust
+/// use ya_requestor_sdk::{commands, CommandList};
+///
+/// let script = commands![
+///     upload("input.txt".to_string());
+///     run("main", "/workdir/input.txt".to_string(), "/workdir/output.txt".to_string());
+///     download("output.txt".to_string())
+/// ];
+/// ```
 #[derive(Clone)]
 pub struct CommandList(Vec<Command>);
 
