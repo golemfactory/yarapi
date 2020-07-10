@@ -1,15 +1,15 @@
 /* TODO don't use PaymentManager from gwasm-runner */
+mod command;
 mod package;
 #[allow(dead_code)]
 #[allow(unused_variables)]
 #[allow(unused_must_use)]
 mod payment_manager;
 mod requestor;
-mod command;
 
+pub use command::{Command, CommandList};
 pub use package::Package;
 pub use requestor::*;
-pub use command::{Command, CommandList};
 
 #[macro_export]
 macro_rules! expand_cmd {
@@ -19,14 +19,14 @@ macro_rules! expand_cmd {
     (run ( $($e:expr),* )) => {{
         $crate::Command::Run(vec![ $($e.to_string()),* ])
     }};
-    (transfer ( $e:expr, $f:expr)) => {
+    (transfer ( $e:expr, $f:expr )) => {
         $crate::Command::Transfer { from: $e.to_string(), to: $f.to_string() }
     };
-    (upload ( $e:expr )) => {
-        $crate::Command::Upload( $e.to_string() )
+    (upload ( $e:expr, $f:expr )) => {
+        $crate::Command::Upload { from: $e.to_string(), to: $f.to_string() }
     };
-    (download ( $e:expr )) => {
-        $crate::Command::Download( $e.to_string() )
+    (download ( $e:expr, $f:expr )) => {
+        $crate::Command::Download { from: $e.to_string(), to: $f.to_string() }
     };
 }
 
@@ -59,4 +59,3 @@ macro_rules! commands {
         CommandList::new(v)
     }};
 }
-

@@ -21,11 +21,20 @@ pub enum Command {
     /// Transfer from `from` url to `to` url.
     ///
     /// TODO explain which urls are valid: [`file:/`, `http://`, `gftp:/`, `container:/`].
-    Transfer { from: String, to: String },
+    Transfer {
+        from: String,
+        to: String,
+    },
     /// Path to file(s) to upload.
-    Upload(String),
+    Upload {
+        from: String,
+        to: String,
+    },
     /// Path to file(s) to download.
-    Download(String),
+    Download {
+        from: String,
+        to: String,
+    },
 }
 
 /// Represents a list of commands to execute at the remote node.
@@ -41,9 +50,9 @@ pub enum Command {
 /// use ya_requestor_sdk::{commands, CommandList};
 ///
 /// let script = commands![
-///     upload("input.txt".to_string());
+///     upload("input.txt".to_string(), "/workdir/input.txt".to_string());
 ///     run("main", "/workdir/input.txt".to_string(), "/workdir/output.txt".to_string());
-///     download("output.txt".to_string())
+///     download("/workdir/output.txt".to_string(), "output.txt".to_string())
 /// ];
 /// ```
 #[derive(Clone)]
@@ -59,7 +68,7 @@ impl CommandList {
         self.0
             .iter()
             .filter_map(|cmd| match cmd {
-                Command::Upload(str) => Some(str.clone()),
+                Command::Upload { from, .. } => Some(from.clone()),
                 _ => None,
             })
             .collect()
@@ -69,7 +78,7 @@ impl CommandList {
         self.0
             .iter()
             .filter_map(|cmd| match cmd {
-                Command::Download(str) => Some(str.clone()),
+                Command::Download { to, .. } => Some(to.clone()),
                 _ => None,
             })
             .collect()
@@ -105,16 +114,16 @@ impl CommandList {
                     if let Some(args) = vec.get(1..) {
                         obj.insert("args".to_string(), json!(args));
                     }
-                    json!({"run": obj})
+                    json!({ "run": obj })
                 }
                 Command::Transfer { from, to } => json!({"transfer": { "from": from, "to": to }}),
-                Command::Upload(path) => serde_json::json!({ "transfer": {
-                    "from": upload_urls[path],
-                    "to": format!("container:/{}", path),
+                Command::Upload { from, to } => serde_json::json!({ "transfer": {
+                    "from": upload_urls[from],
+                    "to": format!("container:{}", to),
                 }}),
-                Command::Download(path) => serde_json::json!({ "transfer": {
-                    "from": format!("container:/{}", path),
-                    "to": download_urls[path],
+                Command::Download { from, to } => serde_json::json!({ "transfer": {
+                    "from": format!("container:{}", from),
+                    "to": download_urls[to],
                 }}),
             })
         }
