@@ -1,17 +1,17 @@
-use crate::{package::Package, payment_manager};
+use crate::{payment_manager, CommandList, Package};
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use futures::{SinkExt, StreamExt};
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
-use ya_client::activity::ActivityRequestorApi;
-use ya_client::model::activity::ExeScriptRequest;
 use ya_client::{
+    activity::ActivityRequestorApi,
     market::MarketRequestorApi,
     model::{
         self,
@@ -24,89 +24,6 @@ use ya_client::{
 pub enum Image {
     WebAssembly(semver::Version),
     GVMKit,
-}
-
-#[derive(Clone)]
-pub enum Command {
-    Deploy,
-    Start,
-    Run(Vec<String>),
-    Transfer { from: String, to: String },
-    Upload(String),
-    Download(String),
-}
-
-#[derive(Clone)]
-pub struct CommandList(Vec<Command>);
-
-impl CommandList {
-    pub fn new(v: Vec<Command>) -> Self {
-        Self(v)
-    }
-    pub fn get_upload_files(&self) -> Vec<String> {
-        self.0
-            .iter()
-            .filter_map(|cmd| match cmd {
-                Command::Upload(str) => Some(str.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-    pub fn get_download_files(&self) -> Vec<String> {
-        self.0
-            .iter()
-            .filter_map(|cmd| match cmd {
-                Command::Download(str) => Some(str.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-}
-
-impl CommandList {
-    pub fn to_exe_script_and_info(
-        &self,
-        gftp_upload_urls: &HashMap<String, Url>,
-        gftp_download_urls: &HashMap<String, Url>,
-    ) -> Result<(ExeScriptRequest, usize, HashSet<usize>), anyhow::Error> {
-        let mut res = vec![];
-        let mut run_ind = HashSet::new();
-        for (i, cmd) in vec![Command::Deploy, Command::Start]
-            .iter()
-            .chain(self.0.iter())
-            .enumerate()
-        {
-            res.push(match cmd {
-                Command::Deploy => serde_json::json!({ "deploy": {} }),
-                Command::Start => serde_json::json!({ "start": { "args": [] }}),
-                Command::Run(vec) => {
-                    run_ind.insert(i);
-                    serde_json::json!({ "run": { // TODO depends on ExeUnit type
-                        "entry_point": vec[0],
-                        "args": &vec[1..]
-                    }})
-                }
-                Command::Transfer { from, to } => serde_json::json!({ "transfer": {
-                    "from": from,
-                    "to": to,
-                }}),
-                // TODO!!! container paths should be configurable (not only /workdir/)
-                Command::Upload(path) => serde_json::json!({ "transfer": {
-                    "from": gftp_upload_urls[path],
-                    "to": format!("container:/{}", path),
-                }}),
-                Command::Download(path) => serde_json::json!({ "transfer": {
-                    "from": format!("container:/{}", path),
-                    "to": gftp_download_urls[path],
-                }}),
-            })
-        }
-        Ok((
-            ExeScriptRequest::new(serde_json::to_string_pretty(&res)?),
-            res.len(),
-            run_ind,
-        ))
-    }
 }
 
 #[derive(Clone)]
@@ -197,7 +114,7 @@ impl Requestor {
         let mut download_urls = HashMap::new();
         log::info!("serving files using gftp");
         for task in &self.tasks {
-            for name in task.get_upload_files() {
+            for name in task.get_uploads() {
                 match Path::new(&name).canonicalize() {
                     Ok(path) => {
                         log::info!("gftp requestor->provider {:?}", path);
@@ -208,7 +125,7 @@ impl Requestor {
                     Err(e) => log::error!("file: {} error: {}", name, e),
                 }
             }
-            for name in task.get_download_files() {
+            for name in task.get_downloads() {
                 log::info!("gftp provider->requestor {}", name);
                 let path = Path::new(&name);
                 let url = gftp::open_for_upload(&path).await?;
@@ -218,55 +135,6 @@ impl Requestor {
         }
         Ok((upload_urls, download_urls))
     }
-}
-
-#[macro_export]
-macro_rules! expand_cmd {
-    (deploy) => { $crate::Command::Deploy };
-    (start) => { $crate::Command::Start };
-    (stop) => { $crate::Command::Stop };
-    (run ( $($e:expr),* )) => {{
-        $crate::Command::Run(vec![ $($e.to_string()),* ])
-    }};
-    (transfer ( $e:expr, $f:expr)) => {
-        $crate::Command::Transfer { from: $e.to_string(), to: $f.to_string() }
-    };
-    (upload ( $e:expr )) => {
-        $crate::Command::Upload( $e.to_string() )
-    };
-    (download ( $e:expr )) => {
-        $crate::Command::Download( $e.to_string() )
-    };
-}
-
-#[macro_export]
-macro_rules! commands_helper {
-    () => {};
-    ( $i:ident ( $($param:expr),* ) $(;)* ) => {{
-        vec![$crate::expand_cmd!($i ( $($param),* ))]
-    }};
-    ( $i:tt $(;)* ) => {{
-        vec![$crate::expand_cmd!($i)]
-    }};
-    ( $i:ident ( $($param:expr),* ) ; $( $t:tt )* ) => {{
-        let mut tail = $crate::commands_helper!( $($t)* );
-        tail.push($crate::expand_cmd!($i ( $($param),* )));
-        tail
-    }};
-    ( $i:tt ; $( $t:tt )* ) => {{
-        let mut tail = $crate::commands_helper!( $($t)* );
-        tail.push($crate::expand_cmd!($i));
-        tail
-    }};
-}
-
-#[macro_export]
-macro_rules! commands {
-    ( $( $t:tt )* ) => {{
-        let mut v = $crate::commands_helper!( $($t)* );
-        v.reverse();
-        CommandList::new(v)
-    }};
 }
 
 impl Actor for Requestor {
@@ -386,7 +254,7 @@ impl Actor for Requestor {
                             let issuer = pr.issuer_id().unwrap().clone();
                             log::debug!("hello issuer: {}", issuer);
                             let (script, num_cmds, run_ind) = self_copy.tasks[i]
-                                .to_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
+                                .as_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
                             log::info!("exe script: {:?}", script);
                             let mut output_tx_clone = output_tx.clone();
                             let payment_manager_clone = payment_manager.clone();

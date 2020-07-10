@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tokio::fs;
 use url::Url;
 
+/// Represents a path/url to a Yagna package.
 #[derive(Debug, Clone)]
 pub enum Package {
     /// Path to Yagna package. Hash information will be computed automatically.
