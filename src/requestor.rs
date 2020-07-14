@@ -4,12 +4,9 @@ use anyhow::Result;
 use bigdecimal::BigDecimal;
 use futures::{SinkExt, StreamExt};
 use std::{
-    collections::HashMap,
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
-use url::Url;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::{
     activity::ActivityRequestorApi,
@@ -85,7 +82,7 @@ impl Requestor {
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         let app_key = std::env::var("YAGNA_APPKEY").unwrap();
         let client = ya_client::web::WebClient::builder()
             .auth_token(&app_key)
@@ -95,8 +92,6 @@ impl Requestor {
         let payment_api: PaymentRequestorApi = client.interface()?;
         //let timeout = self.timeout;
         let providers_num = self.tasks.len();
-
-        let (gftp_upload_urls, gftp_download_urls) = self.create_gftp_urls().await?;
         let demand = self.create_demand().await;
 
         log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
@@ -189,9 +184,14 @@ impl Requestor {
                     let agr_id = pr.proposal_id().unwrap().clone();
                     let issuer = pr.issuer_id().unwrap().clone();
                     log::debug!("hello issuer: {}", issuer);
-                    let (script, num_cmds, run_ind) = self.tasks[i]
-                        .as_exe_script_and_info(&gftp_upload_urls, &gftp_download_urls)?;
+
+                    let task = match self.tasks.pop() {
+                        None => break,
+                        Some(task) => task,
+                    };
+                    let (script, num_cmds, run_ind) = task.into_exe_script().await?;
                     log::info!("exe script: {:?}", script);
+
                     let mut output_tx_clone = output_tx.clone();
                     let payment_manager_clone = payment_manager.clone();
                     Arbiter::spawn(async move {
@@ -345,33 +345,6 @@ impl Requestor {
             }),
             self.constraints.to_string(),
         )
-    }
-
-    async fn create_gftp_urls(&self) -> Result<(HashMap<String, Url>, HashMap<String, Url>)> {
-        let mut upload_urls = HashMap::new();
-        let mut download_urls = HashMap::new();
-        log::info!("serving files using gftp");
-        for task in &self.tasks {
-            for name in task.get_uploads() {
-                match Path::new(&name).canonicalize() {
-                    Ok(path) => {
-                        log::info!("gftp requestor->provider {:?}", path);
-                        let url = gftp::publish(&path).await?;
-                        log::info!("upload to provider: {}", url);
-                        upload_urls.insert(name, url);
-                    }
-                    Err(e) => log::error!("file: {} error: {}", name, e),
-                }
-            }
-            for name in task.get_downloads() {
-                log::info!("gftp provider->requestor {}", name);
-                let path = Path::new(&name);
-                let url = gftp::open_for_upload(&path).await?;
-                log::info!("download from provider: {}", url);
-                download_urls.insert(name, url);
-            }
-        }
-        Ok((upload_urls, download_urls))
     }
 }
 

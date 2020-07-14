@@ -23,10 +23,10 @@ macro_rules! expand_cmd {
         $crate::Command::Transfer { from: $e.to_string(), to: $f.to_string() }
     };
     (upload ( $e:expr, $f:expr )) => {
-        $crate::Command::Upload { from: $e.to_string(), to: $f.to_string() }
+        $crate::Command::Upload { from: $e, to: $f.to_string() }
     };
     (download ( $e:expr, $f:expr )) => {
-        $crate::Command::Download { from: $e.to_string(), to: $f.to_string() }
+        $crate::Command::Download { from: $e.to_string(), to: $f }
     };
 }
 

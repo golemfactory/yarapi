@@ -18,9 +18,9 @@ async fn main() -> Result<(), ()> {
     ])
     .with_tasks(vec!["1", "2"].into_iter().map(|i| {
         commands! {
-            upload(format!("input-{}.txt", i), "/workdir/input.txt".to_string());
+            upload(format!("input-{}.txt", i).into(), "/workdir/input.txt".to_string());
             run("main", i);
-            download("/workdir/output.txt".to_string(), format!("output-{}.txt", i))
+            download("/workdir/output.txt".to_string(), format!("output-{}.txt", i).into())
         }
     }))
     .on_completed(|outputs: Vec<String>| {

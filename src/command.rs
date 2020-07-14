@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     iter::FromIterator,
+    path::{Path, PathBuf},
 };
-use url::Url;
 use ya_client::model::activity::ExeScriptRequest;
 
 /// Represents supported exe-script commands.
@@ -27,13 +27,13 @@ pub enum Command {
     },
     /// Path to file(s) to upload.
     Upload {
-        from: String,
+        from: PathBuf,
         to: String,
     },
     /// Path to file(s) to download.
     Download {
         from: String,
-        to: String,
+        to: PathBuf,
     },
 }
 
@@ -64,31 +64,8 @@ impl CommandList {
         // start before the rest, etc.
         Self(Vec::from_iter(v))
     }
-    pub(super) fn get_uploads(&self) -> Vec<String> {
-        self.0
-            .iter()
-            .filter_map(|cmd| match cmd {
-                Command::Upload { from, .. } => Some(from.clone()),
-                _ => None,
-            })
-            .collect()
-    }
 
-    pub(super) fn get_downloads(&self) -> Vec<String> {
-        self.0
-            .iter()
-            .filter_map(|cmd| match cmd {
-                Command::Download { to, .. } => Some(to.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub(super) fn as_exe_script_and_info(
-        &self,
-        upload_urls: &HashMap<String, Url>,
-        download_urls: &HashMap<String, Url>,
-    ) -> Result<(ExeScriptRequest, usize, HashSet<usize>)> {
+    pub(super) async fn into_exe_script(self) -> Result<(ExeScriptRequest, usize, HashSet<usize>)> {
         use serde_json::{json, map::Map};
 
         let mut res = vec![];
@@ -118,12 +95,12 @@ impl CommandList {
                 }
                 Command::Transfer { from, to } => json!({"transfer": { "from": from, "to": to }}),
                 Command::Upload { from, to } => serde_json::json!({ "transfer": {
-                    "from": upload_urls[from],
+                    "from": Self::get_upload(&from).await?,
                     "to": format!("container:{}", to),
                 }}),
                 Command::Download { from, to } => serde_json::json!({ "transfer": {
                     "from": format!("container:{}", from),
-                    "to": download_urls[to],
+                    "to": Self::get_download(&to).await?,
                 }}),
             })
         }
@@ -133,5 +110,24 @@ impl CommandList {
             res.len(),
             run_ind,
         ))
+    }
+
+    async fn get_upload(path: &Path) -> Result<String> {
+        let path = path.canonicalize()?;
+        log::info!("gftp requestor->provider {}", path.display());
+
+        let url = gftp::publish(&path).await?.to_string();
+        log::info!("upload to provider: {}", url);
+
+        Ok(url)
+    }
+
+    async fn get_download(path: &Path) -> Result<String> {
+        log::info!("gftp provider->requestor {}", path.display());
+
+        let url = gftp::open_for_upload(&path).await?.to_string();
+        log::info!("download from provider: {}", url);
+
+        Ok(url)
     }
 }
