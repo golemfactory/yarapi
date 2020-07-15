@@ -3,10 +3,13 @@ use actix::prelude::*;
 use anyhow::Result;
 use bigdecimal::BigDecimal;
 use futures::{SinkExt, StreamExt};
+use payment_manager::PaymentManager;
 use std::{
+    iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::time;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_client::{
     activity::ActivityRequestorApi,
@@ -16,6 +19,7 @@ use ya_client::{
         market::{proposal::State, AgreementProposal, Demand, RequestorEvent},
     },
     payment::PaymentRequestorApi,
+    web::WebClient,
 };
 
 #[derive(Clone)]
@@ -38,6 +42,7 @@ pub struct Requestor {
 }
 
 impl Requestor {
+    /// Creates a new requestor from `Image` and `Package` with given `name`.
     pub fn new<T: Into<String>>(name: T, image_type: Image, task_package: Package) -> Self {
         Self {
             name: name.into(),
@@ -51,30 +56,37 @@ impl Requestor {
             on_completed: None,
         }
     }
+
+    /// Adds `Constraints` for the specified tasks.
     pub fn with_constraints(self, constraints: Constraints) -> Self {
         Self {
             constraints: constraints.clone().and(constraints),
             ..self
         }
     }
-    pub fn with_timeout(self, timeout: std::time::Duration) -> Self {
+
+    /// Adds some `timeout` value for the tasks.
+    pub fn with_timeout(self, timeout: Duration) -> Self {
         Self { timeout, ..self }
     }
+
+    /// Sets the max budget in GNT.
     pub fn with_max_budget_gnt<T: Into<BigDecimal>>(self, budget: T) -> Self {
         Self {
             budget: budget.into(),
             ..self
         }
     }
-    pub fn with_tasks<T: std::iter::Iterator<Item = CommandList>>(self, tasks: T) -> Self {
-        let tasks_vec: Vec<CommandList> = tasks.collect();
-        //let n = tasks_vec.len();
+
+    /// Adds tasks from the specified iterator.
+    pub fn with_tasks(self, tasks: impl IntoIterator<Item = CommandList>) -> Self {
         Self {
-            tasks: tasks_vec,
-            //stdout_results: vec!["".to_string(); n],
+            tasks: Vec::from_iter(tasks),
             ..self
         }
     }
+    
+    /// Sets callback to invoke upon completion of the tasks.
     pub fn on_completed<T: Fn(Vec<String>) + 'static>(self, f: T) -> Self {
         Self {
             on_completed: Some(Arc::new(f)),
@@ -82,19 +94,18 @@ impl Requestor {
         }
     }
 
+    /// Runs all tasks asynchronously.
     pub async fn run(mut self) -> Result<()> {
-        let app_key = std::env::var("YAGNA_APPKEY").unwrap();
-        let client = ya_client::web::WebClient::builder()
-            .auth_token(&app_key)
-            .build();
+        let app_key = std::env::var("YAGNA_APPKEY")?;
+        let client = WebClient::builder().auth_token(&app_key).build();
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
         let payment_api: PaymentRequestorApi = client.interface()?;
         //let timeout = self.timeout;
         let providers_num = self.tasks.len();
-        let demand = self.create_demand().await;
+        let demand = self.create_demand().await?;
 
-        log::info!("Demand: {}", serde_json::to_string(&demand).unwrap());
+        log::debug!("Demand: {}", serde_json::to_string(&demand)?);
 
         let subscription_id = market_api.subscribe(&demand).await?;
 
@@ -109,8 +120,7 @@ impl Requestor {
             .await?;
         log::info!("allocated {} GNT.", &allocation.total_amount);
 
-        let payment_manager =
-            payment_manager::PaymentManager::new(payment_api.clone(), allocation).start();
+        let payment_manager = PaymentManager::new(payment_api.clone(), allocation).start();
 
         #[derive(Copy, Clone, PartialEq)]
         enum ComputationState {
@@ -118,6 +128,7 @@ impl Requestor {
             AnswerBestProposals,
             Done,
         }
+
         let mut state = ComputationState::WaitForInitialProposals;
         let mut proposals = vec![];
         let time_start = Instant::now();
@@ -247,10 +258,8 @@ impl Requestor {
                                     } else {
                                         break;
                                     }
-                                    tokio::time::delay_until(
-                                        tokio::time::Instant::now() + Duration::from_secs(3),
-                                    )
-                                    .await;
+                                    let delay = time::Instant::now() + Duration::from_secs(3);
+                                    time::delay_until(delay).await;
                                 }
                                 log::info!("activity finished: {}", activity_id);
                                 let only_stdout = |txt: String| {
@@ -327,14 +336,14 @@ impl Requestor {
         Ok(())
     }
 
-    async fn create_demand(&self) -> Demand {
+    async fn create_demand(&self) -> Result<Demand> {
         // "golem.node.debug.subnet" == "mysubnet", TODO
-        let (digest, url) = self.task_package.publish().await.unwrap();
+        let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
 
         log::debug!("srv.comp.wasm.task_package: {}", url_with_hash);
 
-        Demand::new(
+        let demand = Demand::new(
             serde_json::json!({
                 "golem": {
                     "node.id.name": self.name,
@@ -344,7 +353,9 @@ impl Requestor {
                 },
             }),
             self.constraints.to_string(),
-        )
+        );
+
+        Ok(demand)
     }
 }
 
