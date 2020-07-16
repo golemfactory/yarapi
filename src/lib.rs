@@ -9,7 +9,7 @@ mod requestor;
 
 pub use command::{Command, CommandList};
 pub use package::Package;
-pub use requestor::*;
+pub use requestor::{Image, Requestor};
 
 #[macro_export]
 macro_rules! expand_cmd {

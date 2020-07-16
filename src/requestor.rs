@@ -85,7 +85,7 @@ impl Requestor {
             ..self
         }
     }
-    
+
     /// Sets callback to invoke upon completion of the tasks.
     pub fn on_completed<T: Fn(Vec<String>) + 'static>(self, f: T) -> Self {
         Self {
