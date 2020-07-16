@@ -17,16 +17,16 @@ macro_rules! expand_cmd {
     (start) => { $crate::Command::Start };
     (stop) => { $crate::Command::Stop };
     (run ( $($e:expr),* )) => {{
-        $crate::Command::Run(vec![ $($e.to_string()),* ])
+        $crate::Command::Run(vec![ $($e.into()),* ])
     }};
     (transfer ( $e:expr, $f:expr )) => {
-        $crate::Command::Transfer { from: $e.to_string(), to: $f.to_string() }
+        $crate::Command::Transfer { from: $e.into(), to: $f.into() }
     };
     (upload ( $e:expr, $f:expr )) => {
-        $crate::Command::Upload { from: $e, to: $f.to_string() }
+        $crate::Command::Upload { from: $e.into(), to: $f.into() }
     };
     (download ( $e:expr, $f:expr )) => {
-        $crate::Command::Download { from: $e.to_string(), to: $f }
+        $crate::Command::Download { from: $e.into(), to: $f.into() }
     };
 }
 
