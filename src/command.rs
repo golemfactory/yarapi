@@ -65,7 +65,7 @@ impl CommandList {
         Self(Vec::from_iter(v))
     }
 
-    pub(super) async fn into_exe_script(self) -> Result<(ExeScriptRequest, usize, HashSet<usize>)> {
+    pub(super) async fn into_exe_script(self) -> Result<ExeScript> {
         use serde_json::{json, map::Map};
 
         let mut res = vec![];
@@ -105,11 +105,11 @@ impl CommandList {
             })
         }
 
-        Ok((
-            ExeScriptRequest::new(serde_json::to_string_pretty(&res)?),
-            res.len(),
-            run_ind,
-        ))
+        Ok(ExeScript {
+            request: ExeScriptRequest::new(serde_json::to_string_pretty(&res)?),
+            num_cmds: res.len(),
+            run_indices: run_ind,
+        })
     }
 
     async fn get_upload(path: &Path) -> Result<String> {
@@ -130,4 +130,11 @@ impl CommandList {
 
         Ok(url)
     }
+}
+
+#[derive(Debug)]
+pub(super) struct ExeScript {
+    pub request: ExeScriptRequest,
+    pub num_cmds: usize,
+    pub run_indices: HashSet<usize>,
 }

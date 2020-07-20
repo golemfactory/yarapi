@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use futures::{future::FutureExt, pin_mut, select};
+use std::collections::HashMap;
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Package::Archive, Requestor};
 
@@ -25,11 +26,10 @@ async fn main() -> Result<()> {
             download("/workdir/output.txt", format!("output-{}.txt", i))
         }
     }))
-    .on_completed(|outputs: Vec<String>| {
-        outputs
-            .iter()
-            .enumerate()
-            .for_each(|(i, o)| println!("task #{}: {}", i, o));
+    .on_completed(|outputs: HashMap<String, String>| {
+        for (prov_id, output) in outputs {
+            println!("{} => {}", prov_id, output);
+        }
     })
     .run()
     .fuse();

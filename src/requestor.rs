@@ -1,10 +1,11 @@
-use crate::{payment_manager, CommandList, Package};
+use crate::{command::ExeScript, payment_manager, CommandList, Package};
 use actix::prelude::*;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bigdecimal::BigDecimal;
 use futures::{SinkExt, StreamExt};
 use payment_manager::PaymentManager;
 use std::{
+    collections::HashMap,
     iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
@@ -16,7 +17,10 @@ use ya_client::{
     market::MarketRequestorApi,
     model::{
         self,
-        market::{proposal::State, AgreementProposal, Demand, RequestorEvent},
+        market::{
+            proposal::{Proposal, State},
+            AgreementProposal, Demand, RequestorEvent,
+        },
     },
     payment::PaymentRequestorApi,
     web::WebClient,
@@ -38,7 +42,7 @@ pub struct Requestor {
     timeout: Duration,
     budget: BigDecimal,
     status: String,
-    on_completed: Option<Arc<dyn Fn(Vec<String>)>>,
+    on_completed: Option<Arc<dyn Fn(HashMap<String, String>)>>,
 }
 
 impl Requestor {
@@ -87,7 +91,7 @@ impl Requestor {
     }
 
     /// Sets callback to invoke upon completion of the tasks.
-    pub fn on_completed<T: Fn(Vec<String>) + 'static>(self, f: T) -> Self {
+    pub fn on_completed<T: Fn(HashMap<String, String>) + 'static>(self, f: T) -> Self {
         Self {
             on_completed: Some(Arc::new(f)),
             ..self
@@ -132,12 +136,16 @@ impl Requestor {
         let mut state = ComputationState::WaitForInitialProposals;
         let mut proposals = vec![];
         let time_start = Instant::now();
+
         while state != ComputationState::Done {
             log::info!("getting new events, state: {}", state as u8);
+
             let events = market_api
                 .collect(&subscription_id, Some(2.0), Some(5))
                 .await?;
+
             log::info!("received {} events", events.len());
+
             for e in events {
                 match e {
                     RequestorEvent::ProposalEvent {
@@ -149,11 +157,14 @@ impl Requestor {
                                 log::error!("proposal_id should be empty");
                                 continue;
                             }
+
                             if state != ComputationState::WaitForInitialProposals {
                                 /* ignore new proposals in other states */
                                 continue;
                             }
+
                             log::info!("answering with counter proposal");
+
                             let bespoke_proposal = match proposal.counter_demand(demand.clone()) {
                                 Ok(c) => c,
                                 Err(e) => {
@@ -161,6 +172,7 @@ impl Requestor {
                                     continue;
                                 }
                             };
+
                             let market_api_clone = market_api.clone();
                             let subscription_id_clone = subscription_id.clone();
 
@@ -183,138 +195,61 @@ impl Requestor {
                 || (time_start.elapsed() > Duration::from_secs(30)
                     && proposals.len() >= providers_num)
             {
-                let (output_tx, output_rx) = futures::channel::mpsc::unbounded::<(usize, String)>();
+                let (output_tx, output_rx) =
+                    futures::channel::mpsc::unbounded::<(String, String)>();
+
                 state = ComputationState::AnswerBestProposals;
+
                 /* TODO choose only N best providers here */
                 log::debug!("trying to sign agreements with providers");
 
                 for i in 0..providers_num {
-                    let pr = &proposals[i];
                     let market_api_clone = market_api.clone();
                     let activity_api_clone = activity_api.clone();
-                    let agr_id = pr.proposal_id().unwrap().clone();
-                    let issuer = pr.issuer_id().unwrap().clone();
-                    log::debug!("hello issuer: {}", issuer);
+                    let payment_manager_clone = payment_manager.clone();
+
+                    let proposal = proposals[i].clone();
 
                     let task = match self.tasks.pop() {
                         None => break,
                         Some(task) => task,
                     };
-                    let (script, num_cmds, run_ind) = task.into_exe_script().await?;
-                    log::info!("exe script: {:?}", script);
+                    let exe_script = task.into_exe_script().await?;
+                    log::info!("exe script: {:?}", exe_script);
 
-                    let mut output_tx_clone = output_tx.clone();
-                    let payment_manager_clone = payment_manager.clone();
+                    let output_tx_clone = output_tx.clone();
+
                     Arbiter::spawn(async move {
-                        log::debug!("issuer: {}", issuer);
-                        let agr = AgreementProposal::new(
-                            agr_id.clone(),
-                            chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
-                        );
-                        log::info!("creating agreement");
-                        /* TODO handle errors */
-                        let r = market_api_clone.create_agreement(&agr).await;
-                        log::info!("create agreement result: {:?}; confirming", r);
-                        let _ = market_api_clone.confirm_agreement(&agr_id).await;
-                        log::info!("waiting for approval");
-                        let _ = market_api_clone
-                            .wait_for_approval(&agr_id, Some(10.0))
-                            .await;
-                        log::info!("new agreement with: {}", issuer);
-                        if let Ok(activity_id) =
-                            activity_api_clone.control().create_activity(&agr_id).await
-                        {
-                            log::info!("activity created: {}", activity_id);
-                            if let Ok(batch_id) = activity_api_clone
-                                .control()
-                                .exec(script, &activity_id)
-                                .await
-                            {
-                                let mut all_res = vec![];
-                                loop {
-                                    log::info!("getting state of running activity {}", activity_id);
-                                    if let Ok(state) =
-                                        activity_api_clone.state().get_state(&activity_id).await
-                                    {
-                                        if !state.alive() {
-                                            break;
-                                        }
-                                        if let Ok(res) = activity_api_clone
-                                            .control()
-                                            .get_exec_batch_results(
-                                                &activity_id,
-                                                &batch_id,
-                                                None,
-                                                None,
-                                            )
-                                            .await
-                                        {
-                                            log::debug!("batch_results: {}", res.len());
-                                            all_res = res;
-                                        }
-                                        if all_res.len() >= num_cmds {
-                                            break;
-                                        }
-                                    } else {
-                                        break;
-                                    }
-                                    let delay = time::Instant::now() + Duration::from_secs(3);
-                                    time::delay_until(delay).await;
-                                }
-                                log::info!("activity finished: {}", activity_id);
-                                let only_stdout = |txt: String| {
-                                    if txt.starts_with("stdout: ") {
-                                        if let Some(pos) = txt.find("\nstderr:") {
-                                            &txt[8..pos]
-                                        } else {
-                                            &txt[8..]
-                                        }
-                                    } else {
-                                        ""
-                                    }
-                                    .to_string()
-                                };
-                                let output = all_res
-                                    .into_iter()
-                                    .enumerate()
-                                    .filter_map(|(i, r)| match run_ind.contains(&i) {
-                                        // stdout: {}\nstdout;
-                                        true => Some(r.message.unwrap_or("".to_string()))
-                                            .map(only_stdout),
-                                        false => None,
-                                    })
-                                    .collect();
-                                let _ = payment_manager_clone
-                                    .send(payment_manager::AcceptAgreement {
-                                        agreement_id: agr_id.clone(),
-                                    })
-                                    .await;
-                                // TODO not sure if this is not called too early
-                                let _ = activity_api_clone
-                                    .control()
-                                    .destroy_activity(&activity_id)
-                                    .await;
-                                let _ = output_tx_clone.send((i, output)).await;
-                            } else {
-                                log::error!("exec failed!");
-                            }
-                        }
+                        let _ = Self::create_agreement(
+                            market_api_clone,
+                            activity_api_clone,
+                            payment_manager_clone,
+                            proposal,
+                            exe_script,
+                            output_tx_clone,
+                        )
+                        .await;
                     });
                 }
+
                 proposals = vec![];
-                let mut outputs = vec!["".to_string(); providers_num];
+
+                let mut outputs = HashMap::new();
                 output_rx
                     .take(providers_num)
                     .for_each(|(prov_id, output)| {
-                        outputs[prov_id] = output;
+                        outputs.insert(prov_id, output);
                         futures::future::ready(())
                     })
                     .await;
+
                 log::info!("all activities finished");
+
                 if let Some(fun) = self.on_completed.clone() {
                     fun(outputs);
                     state = ComputationState::Done;
                 }
+
                 loop {
                     let r = payment_manager.send(payment_manager::GetPending).await?;
                     log::info!("pending payments: {}", r);
@@ -326,11 +261,13 @@ impl Requestor {
                 // TODO payment_manager.send(payment_manager::ReleaseAllocation)
                 // TODO market_api.unsubscribe(&subscription_id).await;
             }
+
             /*if time_start.elapsed() > timeout {
                 log::warn!("timeout")
             }*/
             tokio::time::delay_until(tokio::time::Instant::now() + Duration::from_secs(3)).await;
         }
+
         log::info!("all tasks completed and paid for.");
 
         Ok(())
@@ -356,6 +293,117 @@ impl Requestor {
         );
 
         Ok(demand)
+    }
+
+    async fn create_agreement(
+        market_api: MarketRequestorApi,
+        activity_api: ActivityRequestorApi,
+        payment_manager: Addr<PaymentManager>,
+        proposal: Proposal,
+        exe_script: ExeScript,
+        mut tx: futures::channel::mpsc::UnboundedSender<(String, String)>,
+    ) -> Result<()> {
+        let id = proposal.proposal_id()?;
+        let issuer = proposal.issuer_id()?;
+        log::debug!("hello issuer: {}", issuer);
+
+        let agreement = AgreementProposal::new(
+            id.clone(),
+            chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
+        );
+
+        log::info!("creating agreement");
+
+        /* TODO handle errors */
+        let r = market_api.create_agreement(&agreement).await;
+
+        log::info!("create agreement result: {:?}; confirming", r);
+
+        let _ = market_api.confirm_agreement(&id).await;
+
+        log::info!("waiting for approval");
+
+        let _ = market_api.wait_for_approval(&id, Some(10.0)).await;
+
+        log::info!("approval received for agreement: {}", id);
+
+        let activity_id = activity_api.control().create_activity(&id).await?;
+
+        log::info!("activity created: {}", activity_id);
+
+        let batch_id = activity_api
+            .control()
+            .exec(exe_script.request.clone(), &activity_id)
+            .await
+            .context("exec script failed!")?;
+
+        let mut all_res = vec![];
+        loop {
+            log::info!("getting state of running activity {}", activity_id);
+
+            let state = match activity_api.state().get_state(&activity_id).await {
+                Ok(state) => state,
+                Err(_) => break,
+            };
+
+            if !state.alive() {
+                break;
+            }
+
+            let mut res = activity_api
+                .control()
+                .get_exec_batch_results(&activity_id, &batch_id, None, None)
+                .await?;
+            log::debug!("batch_results: {}", res.len());
+            all_res.append(&mut res);
+
+            if all_res.len() >= exe_script.num_cmds {
+                break;
+            }
+
+            let delay = time::Instant::now() + Duration::from_secs(3);
+            time::delay_until(delay).await;
+        }
+
+        log::info!("activity finished: {}", activity_id);
+
+        let only_stdout = |txt: String| {
+            if txt.starts_with("stdout: ") {
+                if let Some(pos) = txt.find("\nstderr:") {
+                    &txt[8..pos]
+                } else {
+                    &txt[8..]
+                }
+            } else {
+                ""
+            }
+            .to_string()
+        };
+
+        let output = all_res
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, r)| match exe_script.run_indices.contains(&i) {
+                // stdout: {}\nstdout;
+                true => Some(r.message.unwrap_or("".to_string())).map(only_stdout),
+                false => None,
+            })
+            .collect();
+
+        let _ = payment_manager
+            .send(payment_manager::AcceptAgreement {
+                agreement_id: id.to_owned(),
+            })
+            .await?;
+
+        // TODO not sure if this is not called too early
+        activity_api
+            .control()
+            .destroy_activity(&activity_id)
+            .await?;
+        let _ = tx.send((issuer.to_owned(), output)).await;
+
+        Ok(())
     }
 }
 
@@ -391,5 +439,17 @@ pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> 
     }
     //progress_bar.finish();
     Ok(())
+}
+struct NewProposals {
+    buffer: Vec<Proposal>,
+    rx: mpsc::Receiver<>
+}
+
+impl Actor for NewProposals {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+
+    }
 }
 */
