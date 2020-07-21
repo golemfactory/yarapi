@@ -101,11 +101,12 @@ impl Requestor {
     /// Runs all tasks asynchronously.
     pub async fn run(mut self) -> Result<()> {
         let app_key = std::env::var("YAGNA_APPKEY")?;
+
         let client = WebClient::builder().auth_token(&app_key).build();
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
         let payment_api: PaymentRequestorApi = client.interface()?;
-        //let timeout = self.timeout;
+
         let providers_num = self.tasks.len();
         let demand = self.create_demand().await?;
 
@@ -117,6 +118,8 @@ impl Requestor {
 
         let allocation = payment_api
             .create_allocation(&model::payment::NewAllocation {
+                address: None,
+                payment_platform: None,
                 total_amount: self.budget,
                 timeout: None,
                 make_deposit: false,
@@ -261,9 +264,7 @@ impl Requestor {
                 // TODO market_api.unsubscribe(&subscription_id).await;
             }
 
-            /*if time_start.elapsed() > timeout {
-                log::warn!("timeout")
-            }*/
+            // TODO handle task timeout
             tokio::time::delay_until(tokio::time::Instant::now() + Duration::from_secs(3)).await;
         }
 
