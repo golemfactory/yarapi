@@ -2,7 +2,7 @@ use crate::{command::ExeScript, payment_manager, CommandList, Package};
 use actix::prelude::*;
 use anyhow::{Context, Result};
 use bigdecimal::BigDecimal;
-use futures::{SinkExt, StreamExt};
+use futures::{channel::oneshot, future};
 use payment_manager::PaymentManager;
 use std::{
     collections::HashMap,
@@ -126,7 +126,7 @@ impl Requestor {
 
         let payment_manager = PaymentManager::new(payment_api.clone(), allocation).start();
 
-        #[derive(Copy, Clone, PartialEq)]
+        #[derive(Debug, Copy, Clone, PartialEq)]
         enum ComputationState {
             WaitForInitialProposals,
             AnswerBestProposals,
@@ -138,7 +138,7 @@ impl Requestor {
         let time_start = Instant::now();
 
         while state != ComputationState::Done {
-            log::info!("getting new events, state: {}", state as u8);
+            log::info!("getting new events, state: {:?}", state);
 
             let events = market_api
                 .collect(&subscription_id, Some(2.0), Some(5))
@@ -146,6 +146,7 @@ impl Requestor {
 
             log::info!("received {} events", events.len());
 
+            let mut futs = vec![];
             for e in events {
                 match e {
                     RequestorEvent::ProposalEvent {
@@ -176,11 +177,13 @@ impl Requestor {
                             let market_api_clone = market_api.clone();
                             let subscription_id_clone = subscription_id.clone();
 
-                            Arbiter::spawn(async move {
-                                let _ = market_api_clone
+                            let fut = spawn_job(|| async move {
+                                market_api_clone
                                     .counter_proposal(&bespoke_proposal, &subscription_id_clone)
-                                    .await;
+                                    .await
                             });
+
+                            futs.push(fut);
                         } else {
                             proposals.push(proposal.clone());
                             log::debug!("got {} answer(s) to counter proposal", proposals.len());
@@ -189,20 +192,23 @@ impl Requestor {
                     _ => log::warn!("expected ProposalEvent"),
                 }
             }
+
+            // TODO we should handle any errors todo with counter proposal
+            // submission. But is this the best place?
+            future::try_join_all(futs).await?;
+
             /* check if there are enough proposals */
             if (time_start.elapsed() > Duration::from_secs(5)
                 && proposals.len() >= 13 * providers_num / 10 + 2)
                 || (time_start.elapsed() > Duration::from_secs(30)
                     && proposals.len() >= providers_num)
             {
-                let (output_tx, output_rx) =
-                    futures::channel::mpsc::unbounded::<(String, String)>();
-
                 state = ComputationState::AnswerBestProposals;
 
                 /* TODO choose only N best providers here */
                 log::debug!("trying to sign agreements with providers");
 
+                let mut futs = vec![];
                 for i in 0..providers_num {
                     let market_api_clone = market_api.clone();
                     let activity_api_clone = activity_api.clone();
@@ -217,31 +223,24 @@ impl Requestor {
                     let exe_script = task.into_exe_script().await?;
                     log::info!("exe script: {:?}", exe_script);
 
-                    let output_tx_clone = output_tx.clone();
-
-                    Arbiter::spawn(async move {
-                        let _ = Self::create_agreement(
+                    let fut = spawn_job(|| async move {
+                        Self::create_agreement(
                             market_api_clone,
                             activity_api_clone,
                             payment_manager_clone,
                             proposal,
                             exe_script,
-                            output_tx_clone,
                         )
-                        .await;
+                        .await
                     });
+                    futs.push(fut);
                 }
 
                 proposals = vec![];
-
                 let mut outputs = HashMap::new();
-                output_rx
-                    .take(providers_num)
-                    .for_each(|(prov_id, output)| {
-                        outputs.insert(prov_id, output);
-                        futures::future::ready(())
-                    })
-                    .await;
+                for (prov_id, output) in future::try_join_all(futs).await? {
+                    outputs.insert(prov_id, output);
+                }
 
                 log::info!("all activities finished");
 
@@ -301,8 +300,7 @@ impl Requestor {
         payment_manager: Addr<PaymentManager>,
         proposal: Proposal,
         exe_script: ExeScript,
-        mut tx: futures::channel::mpsc::UnboundedSender<(String, String)>,
-    ) -> Result<()> {
+    ) -> Result<(String, String)> {
         let id = proposal.proposal_id()?;
         let issuer = proposal.issuer_id()?;
         log::debug!("hello issuer: {}", issuer);
@@ -401,55 +399,21 @@ impl Requestor {
             .control()
             .destroy_activity(&activity_id)
             .await?;
-        let _ = tx.send((issuer.to_owned(), output)).await;
 
-        Ok(())
+        Ok((issuer.to_owned(), output))
     }
 }
 
-/*
-struct GetStatus;
-
-impl Message for GetStatus {
-    type Result = f32;
+async fn spawn_job<T, F, R>(f: F) -> T
+where
+    F: FnOnce() -> R + 'static,
+    R: Future<Output = T> + 'static,
+    T: 'static,
+{
+    let (tx, rx) = oneshot::channel();
+    Arbiter::spawn(async move {
+        let res = f().await;
+        let _ = tx.send(res);
+    });
+    rx.await.expect("oneshot should not fail")
 }
-
-impl Handler<GetStatus> for Requestor {
-    type Result = f32;
-
-    fn handle(&mut self, _msg: GetStatus, _ctx: &mut Self::Context) -> Self::Result {
-        1.0 // TODO
-    }
-}
-
-pub async fn requestor_monitor(task_session: Addr<Requestor>) -> Result<(), ()> {
-    /* TODO attach to the actor */
-    let progress_bar = ProgressBar::new(100);
-    progress_bar.set_style(
-        ProgressStyle::default_bar()
-            .progress_chars("=> ")
-            .template("{elapsed_precise} [{bar:40}] {msg}"),
-    );
-    //progress_bar.set_message("Running tasks");
-    for _ in 0..100000 {
-        //progress_bar.inc(1);
-        let status = task_session.send(GetStatus).await;
-        //log::error!("Here {:?}", status);
-        tokio::time::delay_for(Duration::from_millis(950)).await;
-    }
-    //progress_bar.finish();
-    Ok(())
-}
-struct NewProposals {
-    buffer: Vec<Proposal>,
-    rx: mpsc::Receiver<>
-}
-
-impl Actor for NewProposals {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-
-    }
-}
-*/
