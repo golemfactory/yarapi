@@ -278,13 +278,13 @@ impl Requestor {
         let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
 
-        log::debug!("srv.comp.wasm.task_package: {}", url_with_hash);
+        log::debug!("srv.comp.task_package: {}", url_with_hash);
 
         let demand = Demand::new(
             serde_json::json!({
                 "golem": {
                     "node.id.name": self.name,
-                    "srv.comp.wasm.task_package": url_with_hash,
+                    "srv.comp.task_package": url_with_hash,
                     "srv.comp.expiration":
                         (chrono::Utc::now() + chrono::Duration::minutes(10)).timestamp_millis(), // TODO
                 },
