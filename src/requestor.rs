@@ -125,7 +125,7 @@ impl Requestor {
                 make_deposit: false,
             })
             .await?;
-        log::info!("allocated {} GNT.", &allocation.total_amount);
+        log::info!("allocated {} NGNT.", &allocation.total_amount);
 
         let payment_manager = PaymentManager::new(payment_api.clone(), allocation).start();
 
