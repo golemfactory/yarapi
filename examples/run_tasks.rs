@@ -1,6 +1,7 @@
-use anyhow::{anyhow, Result};
-use futures::{future::FutureExt, pin_mut, select};
+use anyhow::Result;
+use futures::future::{select, FutureExt};
 use std::collections::HashMap;
+
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
 use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Package::Archive, Requestor};
 
@@ -31,14 +32,17 @@ async fn main() -> Result<()> {
             println!("{} => {}", prov_id, output);
         }
     })
-    .run()
-    .fuse();
-    let ctrl_c = actix_rt::signal::ctrl_c().fuse();
+    .run();
 
-    pin_mut!(requestor, ctrl_c);
+    let ctrl_c = actix_rt::signal::ctrl_c().then(|r| async move {
+        match r {
+            Ok(_) => Ok(log::warn!("interrupted: ctrl-c detected!")),
+            Err(e) => Err(anyhow::Error::from(e)),
+        }
+    });
 
-    select! {
-        comp_res = requestor => comp_res,
-        _ = ctrl_c => Err(anyhow!("interrupted: ctrl-c detected!")),
-    }
+    select(requestor.boxed_local(), ctrl_c.boxed_local())
+        .await
+        .into_inner()
+        .0
 }
