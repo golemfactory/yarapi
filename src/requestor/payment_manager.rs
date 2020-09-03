@@ -162,7 +162,7 @@ impl Message for AcceptAgreement {
 impl Handler<AcceptAgreement> for PaymentManager {
     type Result = anyhow::Result<()>;
 
-    fn handle(&mut self, msg: AcceptAgreement, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: AcceptAgreement, _ctx: &mut Self::Context) -> Self::Result {
         self.valid_agreements.insert(msg.agreement_id);
         Ok(())
     }
@@ -177,7 +177,7 @@ impl Message for GetPending {
 impl Handler<GetPending> for PaymentManager {
     type Result = MessageResult<GetPending>;
 
-    fn handle(&mut self, msg: GetPending, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: GetPending, _ctx: &mut Self::Context) -> Self::Result {
         MessageResult(self.valid_agreements.len())
     }
 }
@@ -191,7 +191,7 @@ impl Message for ReleaseAllocation {
 impl Handler<ReleaseAllocation> for PaymentManager {
     type Result = anyhow::Result<()>;
 
-    fn handle(&mut self, msg: ReleaseAllocation, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, _msg: ReleaseAllocation, ctx: &mut Self::Context) -> Self::Result {
         let api = self.payment_api.clone();
         let allocation_id = self.allocation_id.clone();
         let _ = ctx.spawn(

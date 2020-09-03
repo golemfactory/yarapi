@@ -1,13 +1,14 @@
 [package]
-name = "ya-requestor-sdk"
+name = "yarapi"
 version = "0.1.0"
 authors = ["Golem Factory <contact@golem.network>"]
 edition = "2018"
 
 [dependencies]
-gftp = "0.1"
-ya-agreement-utils = "0.1"
 ya-client = "0.3"
+ya-client-model = "0.1"
+gftp = "0.1"
+ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch= "master" }
 
 actix = "0.9"
 actix-rt = "1.0"

@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
-use ya_requestor_sdk::{commands, CommandList, Image::GVMKit, Package, Requestor};
+use yarapi::commands;
+use yarapi::requestor::{CommandList, Image::GVMKit, Package, Requestor};
 
 #[derive(StructOpt)]
 struct Args {

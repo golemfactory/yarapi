@@ -3,7 +3,8 @@ use futures::future::{select, FutureExt};
 use std::collections::HashMap;
 
 use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
-use ya_requestor_sdk::{commands, CommandList, Image::WebAssembly, Package::Archive, Requestor};
+use yarapi::commands;
+use yarapi::requestor::{CommandList, Image::WebAssembly, Package::Archive, Requestor};
 
 #[actix_rt::main]
 async fn main() -> Result<()> {

@@ -47,7 +47,7 @@ pub enum Command {
 ///
 /// ## Example:
 /// ```rust
-/// use ya_requestor_sdk::{commands, CommandList};
+/// use yarapi::{commands, requestor::CommandList};
 ///
 /// let script = commands![
 ///     upload("input.txt".to_string(), "/workdir/input.txt".to_string());

@@ -1,4 +1,10 @@
-use crate::{command::ExeScript, payment_manager, CommandList, Package};
+mod command;
+mod package;
+mod payment_manager;
+
+pub mod macros;
+
+use self::command::ExeScript;
 use actix::prelude::*;
 use anyhow::{Context, Result};
 use bigdecimal::BigDecimal;
@@ -26,6 +32,11 @@ use ya_client::{
     payment::PaymentRequestorApi,
     web::WebClient,
 };
+
+pub use macros::*;
+
+pub use crate::requestor::package::Package;
+pub use crate::requestor::command::{CommandList, Command};
 
 #[derive(Clone)]
 pub enum Image {
