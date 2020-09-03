@@ -1,3 +1,4 @@
+#[doc(hidden)]
 #[macro_export]
 macro_rules! expand_cmd {
     (deploy) => { $crate::requestor::Command::Deploy };
@@ -17,6 +18,7 @@ macro_rules! expand_cmd {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! commands_helper {
     () => {};
@@ -38,11 +40,24 @@ macro_rules! commands_helper {
     }};
 }
 
+/// Builds execution script from directives.
+///
+/// ## Exmaple
+///
+/// ```no_run
+///
+/// let commands = yarapi::commands! {
+///      upload("some_file", "/workdir/input");
+///      run("/bin/ls", "-la", "/workdir/input");
+///      run("/bin/cp", "/workdir/input", "/workdir/output");
+///      download("/workdir/output", "some_file_copy")
+///  };
+///
 #[macro_export]
 macro_rules! commands {
     ( $( $t:tt )* ) => {{
         let mut v = $crate::commands_helper!( $($t)* );
         v.reverse();
-        CommandList::new(v)
+        $crate::requestor::CommandList::new(v)
     }};
 }

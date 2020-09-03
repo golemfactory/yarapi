@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /* source code from gwasm-runner */
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
@@ -29,18 +30,18 @@ impl PaymentManager {
     pub fn new(payment_api: PaymentRequestorApi, allocation: model::payment::Allocation) -> Self {
         let now = Utc::now();
         PaymentManager {
-            payment_api: payment_api.clone(),
+            payment_api,
             allocation_id: allocation.allocation_id,
             total_amount: allocation.total_amount,
             amount_paid: 0.into(),
             valid_agreements: Default::default(),
-            last_debit_note_event: now.clone(),
+            last_debit_note_event: now,
             last_invoice_event: now,
         }
     }
 
     fn update_debit_notes(&mut self, ctx: &mut <PaymentManager as Actor>::Context) {
-        let mut ts = self.last_debit_note_event.clone();
+        let mut ts = self.last_debit_note_event;
         let api = self.payment_api.clone();
 
         let f = async move {
@@ -71,7 +72,7 @@ impl PaymentManager {
     }
 
     fn update_invoices(&mut self, ctx: &mut <PaymentManager as Actor>::Context) {
-        let mut ts = self.last_invoice_event.clone();
+        let mut ts = self.last_invoice_event;
         let api = self.payment_api.clone();
 
         let f = async move {
@@ -197,7 +198,9 @@ impl Handler<ReleaseAllocation> for PaymentManager {
         let _ = ctx.spawn(
             async move {
                 log::info!("Releasing allocation");
-                api.release_allocation(&allocation_id).await;
+                if let Err(e) = api.release_allocation(&allocation_id).await {
+                    log::error!("release allocation error: {}", e);
+                }
             }
             .into_actor(self),
         );

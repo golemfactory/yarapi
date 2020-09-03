@@ -2,7 +2,8 @@ mod command;
 mod package;
 mod payment_manager;
 
-pub mod macros;
+#[macro_use]
+mod macros;
 
 use self::command::ExeScript;
 use actix::prelude::*;
@@ -33,10 +34,8 @@ use ya_client::{
     web::WebClient,
 };
 
-pub use macros::*;
-
+pub use crate::requestor::command::{Command, CommandList};
 pub use crate::requestor::package::Package;
-pub use crate::requestor::command::{CommandList, Command};
 
 #[derive(Clone)]
 pub enum Image {
@@ -240,12 +239,10 @@ impl Requestor {
                 log::debug!("trying to sign agreements with providers");
 
                 let mut futs = vec![];
-                for i in 0..providers_num {
+                for proposal in proposals.iter().cloned().take(providers_num) {
                     let market_api_clone = market_api.clone();
                     let activity_api_clone = activity_api.clone();
                     let payment_manager_clone = payment_manager.clone();
-
-                    let proposal = proposals[i].clone();
 
                     let task = match self.tasks.pop() {
                         None => break,
@@ -283,7 +280,7 @@ impl Requestor {
                 loop {
                     let r = payment_manager.send(payment_manager::GetPending).await?;
                     log::info!("pending payments: {}", r);
-                    if r <= 0 {
+                    if r == 0 {
                         break;
                     }
                     tokio::time::delay_for(Duration::from_secs(1)).await;
@@ -431,7 +428,7 @@ impl Requestor {
             .enumerate()
             .filter_map(|(i, r)| match exe_script.run_indices.contains(&i) {
                 // stdout: {}\nstdout;
-                true => Some(r.message.unwrap_or("".to_string())).map(only_stdout),
+                true => Some(r.message.unwrap_or_default()).map(only_stdout),
                 false => None,
             })
             .collect();

@@ -3,12 +3,19 @@ name = "yarapi"
 version = "0.1.0"
 authors = ["Golem Factory <contact@golem.network>"]
 edition = "2018"
+homepage = "https://github.com/golemfactory/yarapi"
+repository = "https://github.com/golemfactory/yarapi"
+license = "LGPL-3.0"
+description="hi-level api for new Golem"
+keywords=["golem", "yagna"]
+
+
 
 [dependencies]
 ya-client = "0.3"
 ya-client-model = "0.1"
 gftp = "0.1"
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch= "master" }
+ya-agreement-utils = "0.1"
 
 actix = "0.9"
 actix-rt = "1.0"

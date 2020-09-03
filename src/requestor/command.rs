@@ -84,9 +84,9 @@ impl CommandList {
                     // TODO "run" depends on ExeUnit type
                     run_ind.insert(i);
                     let mut obj = Map::new();
-                    let entry_point = vec.get(0).ok_or(anyhow!(
-                        "expected at least one entry in Command::Run: entry_point"
-                    ))?;
+                    let entry_point = vec.get(0).ok_or_else(|| {
+                        anyhow!("expected at least one entry in Command::Run: entry_point")
+                    })?;
                     obj.insert("entry_point".to_string(), json!(entry_point));
                     if let Some(args) = vec.get(1..) {
                         obj.insert("args".to_string(), json!(args));

@@ -4,9 +4,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use ya_agreement_utils::{constraints, ConstraintKey, Constraints};
-use yarapi::commands;
-use yarapi::requestor::{CommandList, Image::GVMKit, Package, Requestor};
+use yarapi::{
+    agreement::{constraints, ConstraintKey, Constraints},
+    commands,
+    requestor::{Image::GVMKit, Package, Requestor},
+};
 
 #[derive(StructOpt)]
 struct Args {
