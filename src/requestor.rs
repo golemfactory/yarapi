@@ -35,13 +35,10 @@ use ya_client::{
     web::WebClient,
 };
 
+use crate::requestor::{activity::Activity, payment_manager::ReleaseAllocation};
 pub use crate::requestor::{
     command::{Command, CommandList},
-    package::{Image, Package}
-};
-use crate::requestor::{
-    activity::Activity,
-    payment_manager::ReleaseAllocation
+    package::{Image, Package},
 };
 
 const MAX_CONCURRENT_JOBS: usize = 64;

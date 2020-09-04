@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::requestor::command::{ExeScript, CommandList};
+use crate::requestor::command::{CommandList, ExeScript};
 use anyhow::Result;
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
 use ya_client::model::activity::{ActivityState, ExeScriptCommandResult};
