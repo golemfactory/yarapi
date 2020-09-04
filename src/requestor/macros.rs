@@ -61,3 +61,15 @@ macro_rules! commands {
         $crate::requestor::CommandList::new(v)
     }};
 }
+
+macro_rules! actix_handler {
+    ($actor:ty, $message:ty, $handle:expr) => {
+        impl Handler<$message> for $actor {
+            type Result = <$message as actix::Message>::Result;
+
+            fn handle(&mut self, msg: $message, ctx: &mut actix::Context<Self>) -> Self::Result {
+                $handle(self, msg, ctx)
+            }
+        }
+    };
+}

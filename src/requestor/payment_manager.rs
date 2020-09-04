@@ -3,6 +3,7 @@
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
+use futures::TryFutureExt;
 use std::collections::HashSet;
 use std::time::Duration;
 use ya_client::{model, payment::requestor::PaymentRequestorApi};
@@ -183,27 +184,26 @@ impl Handler<GetPending> for PaymentManager {
     }
 }
 
-struct ReleaseAllocation;
+pub(crate) struct ReleaseAllocation;
 
 impl Message for ReleaseAllocation {
     type Result = anyhow::Result<()>;
 }
 
 impl Handler<ReleaseAllocation> for PaymentManager {
-    type Result = anyhow::Result<()>;
+    type Result = ResponseActFuture<Self, anyhow::Result<()>>;
 
-    fn handle(&mut self, _msg: ReleaseAllocation, ctx: &mut Self::Context) -> Self::Result {
-        let api = self.payment_api.clone();
+    fn handle(&mut self, _: ReleaseAllocation, _: &mut Self::Context) -> Self::Result {
+        let payment_api = self.payment_api.clone();
         let allocation_id = self.allocation_id.clone();
-        let _ = ctx.spawn(
+        Box::new(
             async move {
-                log::info!("Releasing allocation");
-                if let Err(e) = api.release_allocation(&allocation_id).await {
-                    log::error!("release allocation error: {}", e);
-                }
+                payment_api
+                    .release_allocation(&allocation_id)
+                    .map_err(anyhow::Error::from)
+                    .await
             }
             .into_actor(self),
-        );
-        Ok(())
+        )
     }
 }
