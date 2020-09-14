@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use std::{
     collections::HashSet,
     iter::FromIterator,
@@ -95,7 +95,7 @@ impl CommandList {
                 }
                 Command::Transfer { from, to } => json!({"transfer": { "from": from, "to": to }}),
                 Command::Upload { from, to } => serde_json::json!({ "transfer": {
-                    "from": Self::get_upload(&from).await?,
+                    "from": Self::get_upload(&from).await.with_context(|| format!("upload file {}", from.display()))?,
                     "to": format!("container:{}", to),
                 }}),
                 Command::Download { from, to } => serde_json::json!({ "transfer": {
