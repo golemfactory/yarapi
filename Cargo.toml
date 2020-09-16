@@ -37,6 +37,6 @@ url = "2.1.1"
 structopt = "0.3"
 
 [patch.crates-io]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "f374f7763bab40ac392c024b261a4fa1976845cb"}
-ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", rev = "f374f7763bab40ac392c024b261a4fa1976845cb"}
+ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "9876f116107de0b3521352e97ef766dceb10c4ef"}
+
 

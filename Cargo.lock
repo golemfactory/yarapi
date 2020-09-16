@@ -829,7 +829,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
- "ya-client-model",
+ "ya-client-model 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ya-core-model",
  "ya-service-bus",
 ]
@@ -860,6 +860,22 @@ dependencies = [
  "proc-macro2 1.0.20",
  "quote 1.0.7",
  "syn 1.0.39",
+]
+
+[[package]]
+name = "graphene"
+version = "0.3.1"
+source = "git+https://github.com/golemfactory/graphene-rust.git#e5a78fffd40901142fc191ef8d08f88734802ae7"
+dependencies = [
+ "anyhow",
+ "base64",
+ "byteorder",
+ "chrono",
+ "hex",
+ "openssl",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -2353,13 +2369,13 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
- "ya-client-model",
+ "ya-client-model 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
 name = "ya-client"
 version = "0.3.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=62cab235ea07e7ec2c9c04148a63e09cd299da24#62cab235ea07e7ec2c9c04148a63e09cd299da24"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef#9876f116107de0b3521352e97ef766dceb10c4ef"
 dependencies = [
  "awc",
  "backtrace",
@@ -2368,6 +2384,9 @@ dependencies = [
  "envy",
  "failure",
  "futures",
+ "graphene",
+ "hex",
+ "lazy_static",
  "log",
  "openssl",
  "rand 0.6.5",
@@ -2376,13 +2395,13 @@ dependencies = [
  "serde_json",
  "thiserror",
  "url",
- "ya-client-model",
+ "ya-client-model 0.1.0 (git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef)",
 ]
 
 [[package]]
 name = "ya-client-model"
 version = "0.1.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=62cab235ea07e7ec2c9c04148a63e09cd299da24#62cab235ea07e7ec2c9c04148a63e09cd299da24"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef#9876f116107de0b3521352e97ef766dceb10c4ef"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -2390,6 +2409,19 @@ dependencies = [
  "openssl",
  "rand 0.7.3",
  "secp256k1",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "ya-client-model"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdf609fdfe8acae7bca8de8e1d809ec90b8120ec9555863a3ca24ff70332efa8"
+dependencies = [
+ "bigdecimal",
+ "chrono",
  "serde",
  "serde_json",
  "thiserror",
@@ -2406,7 +2438,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "thiserror",
- "ya-client-model",
+ "ya-client-model 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "ya-service-bus",
 ]
 
@@ -2488,5 +2520,5 @@ dependencies = [
  "url",
  "ya-agreement-utils",
  "ya-client",
- "ya-client-model",
+ "ya-client-model 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
