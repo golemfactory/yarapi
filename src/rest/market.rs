@@ -4,6 +4,7 @@ use futures::prelude::*;
 use futures::TryStreamExt;
 use std::sync::Arc;
 
+use crate::rest::async_drop::{CancelableDropList, DropList};
 use ya_client::market::MarketRequestorApi;
 use ya_client::model::market::proposal::State;
 use ya_client::model::market::Demand;
@@ -27,12 +28,13 @@ impl AsRef<str> for SubscriptionId {
 
 pub struct Market {
     api: MarketRequestorApi,
+    drop_list: DropList,
 }
 
 impl Market {
-    pub fn new(client: WebClient) -> anyhow::Result<Self> {
+    pub(crate) fn new(client: WebClient, drop_list: DropList) -> anyhow::Result<Self> {
         let api = client.interface()?;
-        Ok(Self { api })
+        Ok(Self { api, drop_list })
     }
 
     pub async fn subscribe(
@@ -43,14 +45,22 @@ impl Market {
         let demand = Demand::new(props.clone(), constraints.to_string());
 
         let subscription_id = self.api.subscribe(&demand).await?;
-        Ok(Subscription::new(self.api.clone(), subscription_id.into()))
+        Ok(Subscription::new(
+            self.api.clone(),
+            subscription_id.into(),
+            self.drop_list.clone().into(),
+        ))
     }
 
     pub async fn subscription(
         &self,
         subscription_id: SubscriptionId,
     ) -> anyhow::Result<Subscription> {
-        Ok(Subscription::new(self.api.clone(), subscription_id))
+        Ok(Subscription::new(
+            self.api.clone(),
+            subscription_id,
+            CancelableDropList::new(),
+        ))
     }
 
     pub fn subscriptions(&self) -> impl Stream<Item = anyhow::Result<Subscription>> {
@@ -66,11 +76,24 @@ pub struct Subscription {
 struct SubscriptionInner {
     id: SubscriptionId,
     api: MarketRequestorApi,
+    drop_list: CancelableDropList,
+}
+
+impl Drop for SubscriptionInner {
+    fn drop(&mut self) {
+        let api = self.api.clone();
+        let id = self.id.0.clone();
+        self.drop_list.async_drop(async move {
+            let _ = api.unsubscribe(&id).await?;
+            log::debug!(target:"yarapi::drop", "Subscription {:?} destroyed", id);
+            Ok(())
+        });
+    }
 }
 
 impl Subscription {
-    fn new(api: MarketRequestorApi, id: SubscriptionId) -> Self {
-        let inner = Arc::new(SubscriptionInner { api, id });
+    fn new(api: MarketRequestorApi, id: SubscriptionId, drop_list: CancelableDropList) -> Self {
+        let inner = Arc::new(SubscriptionInner { api, id, drop_list });
         Subscription { inner }
     }
 
@@ -164,7 +187,8 @@ impl Proposal {
             valid_to: deadline,
         };
         let agreement_id = self.subscription.api.create_agreement(&ap).await?;
-        Ok(Agreement::new(self.subscription.api.clone(), agreement_id))
+        // TODO
+        Ok(Agreement::new(self.subscription.api.clone(), agreement_id, CancelableDropList::new()))
     }
 
     pub fn props(&self) -> &serde_json::Value {
@@ -188,11 +212,24 @@ pub struct Agreement {
 struct AgreementInner {
     agreement_id: String,
     api: MarketRequestorApi,
+    drop_list : CancelableDropList,
+}
+
+impl Drop for AgreementInner {
+    fn drop(&mut self) {
+        let api = self.api.clone();
+        let agreement_id = self.agreement_id.clone();
+        self.drop_list.async_drop(async move {
+            api.terminate_agreement(&agreement_id).await.with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
+            log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);
+            Ok(())
+        })
+    }
 }
 
 impl Agreement {
-    fn new(api: MarketRequestorApi, agreement_id: String) -> Self {
-        let inner = Arc::new(AgreementInner { api, agreement_id });
+    fn new(api: MarketRequestorApi, agreement_id: String, drop_list : CancelableDropList) -> Self {
+        let inner = Arc::new(AgreementInner { api, agreement_id, drop_list });
         Self { inner }
     }
 
@@ -226,11 +263,4 @@ impl Agreement {
     pub fn id(&self) -> &str {
         &self.inner.agreement_id
     }
-}
-
-#[cfg(test)]
-mod test {
-
-    #[test]
-    fn test_build() {}
 }

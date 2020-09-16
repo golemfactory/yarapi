@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 
+use crate::rest::async_drop::DropList;
 use futures::future::LocalBoxFuture;
 use futures::prelude::*;
 use futures::stream::LocalBoxStream;
@@ -47,10 +48,15 @@ pub trait RunningBatch {
 pub(crate) struct DefaultActivity {
     api: ActivityRequestorApi,
     activity_id: String,
+    drop_list: Option<DropList>,
 }
 
 impl DefaultActivity {
-    pub(crate) async fn create(api: ActivityRequestorApi, agreement_id: &str) -> Result<Self> {
+    pub(crate) async fn create(
+        api: ActivityRequestorApi,
+        agreement_id: &str,
+        drop_list: Option<DropList>,
+    ) -> Result<Self> {
         let activity_id = api
             .control()
             .create_activity(agreement_id)
@@ -58,7 +64,28 @@ impl DefaultActivity {
             .with_context(|| {
                 format!("failed to create activity for agreement {:?}", agreement_id)
             })?;
-        Ok(Self { api, activity_id })
+        Ok(Self {
+            api,
+            activity_id,
+            drop_list,
+        })
+    }
+}
+
+impl Drop for DefaultActivity {
+    fn drop(&mut self) {
+        if let Some(ref drop_list) = self.drop_list {
+            let api = self.api.clone();
+            let id = self.activity_id.clone();
+            drop_list.async_drop(async move {
+                api.control()
+                    .destroy_activity(&id)
+                    .await
+                    .with_context(|| format!("Failed to auto destroy Activity: {:?}", id))?;
+                log::debug!(target:"yarapi::drop", "Activity {:?} destroyed", id);
+                Ok(())
+            })
+        }
     }
 }
 
@@ -135,27 +162,33 @@ where
 
             let last_index = result
                 .iter()
-                .map(|r| r.index as usize)
+                .map(|r| (r.index + 1) as usize)
                 .max()
                 .or(command_index);
             let is_last = result.iter().any(|r| r.is_batch_finished);
             let events = {
                 let commands = commands.clone();
-                result.into_iter().map(move |step| {
-                    let command: &ExeScriptCommand =
-                        commands.get(step.index as usize).ok_or_else(|| {
-                            anyhow::anyhow!("invalid command response with index: {}", step.index)
-                        })?;
-                    match step.result {
-                        CommandResult::Ok => Ok(Event::StepSuccess {
-                            command: command.clone(),
-                            output: step.message.unwrap_or_default(),
-                        }),
-                        CommandResult::Error => Ok(Event::StepFailed {
-                            message: step.message.unwrap_or_default(),
-                        }),
-                    }
-                })
+                result
+                    .into_iter()
+                    .filter(move |s| Some(s.index as usize) >= command_index)
+                    .map(move |step| {
+                        let command: &ExeScriptCommand =
+                            commands.get(step.index as usize).ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "invalid command response with index: {}",
+                                    step.index
+                                )
+                            })?;
+                        match step.result {
+                            CommandResult::Ok => Ok(Event::StepSuccess {
+                                command: command.clone(),
+                                output: step.message.unwrap_or_default(),
+                            }),
+                            CommandResult::Error => Ok(Event::StepFailed {
+                                message: step.message.unwrap_or_default(),
+                            }),
+                        }
+                    })
             };
 
             Ok::<_, anyhow::Error>(Some((
@@ -283,11 +316,14 @@ impl RunningBatch for SgxBatch {
                 let api = api.clone();
                 let batch_id = batch_id.clone();
                 async move {
-                    api.get_exec_batch_results(&batch_id, Some(30.0), idx)
-                        .await
-                        .with_context(|| {
-                            format!("failed to fetch exec batch result for batch={:?}", batch_id)
-                        })
+                    loop {
+                        match api.get_exec_batch_results(&batch_id, Some(10.0), idx).await {
+                            Ok(v) => return Ok(v),
+                            Err(ya_client::Error::TimeoutError { .. }) => (),
+                            Err(ya_client::Error::InternalError(ref msg)) if msg == "Timeout" => (),
+                            Err(e) => return Err(e.into()),
+                        }
+                    }
                 }
             },
             self.commands.clone(),
