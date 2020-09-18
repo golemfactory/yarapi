@@ -188,7 +188,11 @@ impl Proposal {
         };
         let agreement_id = self.subscription.api.create_agreement(&ap).await?;
         // TODO
-        Ok(Agreement::new(self.subscription.api.clone(), agreement_id, CancelableDropList::new()))
+        Ok(Agreement::new(
+            self.subscription.api.clone(),
+            agreement_id,
+            CancelableDropList::new(),
+        ))
     }
 
     pub fn props(&self) -> &serde_json::Value {
@@ -212,7 +216,7 @@ pub struct Agreement {
 struct AgreementInner {
     agreement_id: String,
     api: MarketRequestorApi,
-    drop_list : CancelableDropList,
+    drop_list: CancelableDropList,
 }
 
 impl Drop for AgreementInner {
@@ -220,7 +224,9 @@ impl Drop for AgreementInner {
         let api = self.api.clone();
         let agreement_id = self.agreement_id.clone();
         self.drop_list.async_drop(async move {
-            api.terminate_agreement(&agreement_id).await.with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
+            api.terminate_agreement(&agreement_id)
+                .await
+                .with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
             log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);
             Ok(())
         })
@@ -228,8 +234,12 @@ impl Drop for AgreementInner {
 }
 
 impl Agreement {
-    fn new(api: MarketRequestorApi, agreement_id: String, drop_list : CancelableDropList) -> Self {
-        let inner = Arc::new(AgreementInner { api, agreement_id, drop_list });
+    fn new(api: MarketRequestorApi, agreement_id: String, drop_list: CancelableDropList) -> Self {
+        let inner = Arc::new(AgreementInner {
+            api,
+            agreement_id,
+            drop_list,
+        });
         Self { inner }
     }
 

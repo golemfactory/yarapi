@@ -8,6 +8,7 @@ pub struct DropList(mpsc::UnboundedSender<Command>);
 
 impl DropList {
     pub fn async_drop(&self, f: impl Future<Output = anyhow::Result<()>> + 'static) {
+        log::debug!("async_drop added");
         let _ = self.0.unbounded_send(DropAction(
             async move {
                 if let Err(e) = f.await {
@@ -80,6 +81,8 @@ impl CancelableDropList {
     pub fn async_drop(&self, f: impl Future<Output = anyhow::Result<()>> + 'static) {
         if let Some(drop_list) = self.take() {
             drop_list.async_drop(f)
+        } else {
+            log::debug!("async_drop skipped");
         }
     }
 }

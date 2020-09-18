@@ -64,7 +64,6 @@ struct Args {
 }
 
 async fn do_init(activity: impl rest::Activity) -> anyhow::Result<()> {
-
     if let Some(c) = activity.credentials() {
         log::info!("credentials= {}\n\n", serde_json::to_string_pretty(&c)?);
     }

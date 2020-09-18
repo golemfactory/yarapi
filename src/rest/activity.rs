@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::rest::async_drop::DropList;
+use crate::rest::async_drop::{CancelableDropList, DropList};
 use futures::future::LocalBoxFuture;
 use futures::prelude::*;
 use futures::stream::LocalBoxStream;
@@ -42,10 +42,10 @@ pub trait Activity {
 pub trait RunningBatch {
     fn id(&self) -> &str;
 
-    fn events(&self) -> stream::LocalBoxStream<Result<Event>>;
+    fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>>;
 }
 
-pub(crate) struct DefaultActivity {
+pub struct DefaultActivity {
     api: ActivityRequestorApi,
     activity_id: String,
     drop_list: Option<DropList>,
@@ -205,7 +205,7 @@ impl RunningBatch for DefaultBatch {
         &self.batch_id
     }
 
-    fn events(&self) -> stream::LocalBoxStream<'_, Result<Event>> {
+    fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>> {
         let commands = self.commands.clone();
         let api = self.api.clone();
         let activity_id = self.activity_id.clone();
@@ -230,14 +230,36 @@ impl RunningBatch for DefaultBatch {
     }
 }
 
-pub(crate) struct SgxActivity {
+pub struct SgxActivity {
     secure_api: SecureActivityRequestorApi,
     api: ActivityRequestorApi,
     activity_id: String,
+    drop_list: CancelableDropList,
+}
+
+impl Drop for SgxActivity {
+    fn drop(&mut self) {
+        if let Some(ref drop_list) = self.drop_list.take() {
+            let api = self.api.clone();
+            let id = self.activity_id.clone();
+            drop_list.async_drop(async move {
+                api.control()
+                    .destroy_activity(&id)
+                    .await
+                    .with_context(|| format!("Failed to auto destroy Activity: {:?}", id))?;
+                log::debug!(target:"yarapi::drop", "Activity {:?} destroyed", id);
+                Ok(())
+            })
+        }
+    }
 }
 
 impl SgxActivity {
-    pub(crate) async fn create(api: ActivityRequestorApi, agreement_id: &str) -> Result<Self> {
+    pub(crate) async fn create(
+        api: ActivityRequestorApi,
+        agreement_id: &str,
+        drop_list: CancelableDropList,
+    ) -> Result<Self> {
         let secure_api = api
             .control()
             .create_secure_activity(agreement_id)
@@ -251,6 +273,7 @@ impl SgxActivity {
             api,
             secure_api,
             activity_id,
+            drop_list,
         })
     }
 }
@@ -296,7 +319,7 @@ impl Activity for SgxActivity {
     }
 }
 
-pub(crate) struct SgxBatch {
+pub struct SgxBatch {
     api: SecureActivityRequestorApi,
     batch_id: String,
     commands: Arc<[ExeScriptCommand]>,
@@ -307,7 +330,7 @@ impl RunningBatch for SgxBatch {
         &self.batch_id
     }
 
-    fn events(&self) -> LocalBoxStream<'_, Result<Event>> {
+    fn events(&self) -> LocalBoxStream<'static, Result<Event>> {
         let api = self.api.clone();
         let batch_id: Arc<str> = self.batch_id.clone().into();
 

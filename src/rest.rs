@@ -1,8 +1,8 @@
-mod activity;
+pub mod activity;
 mod async_drop;
 mod market;
 
-pub use activity::{Activity, Credentials, ExeScriptCommand, RunningBatch};
+pub use activity::{Activity, Credentials, Event as BatchEvent, ExeScriptCommand, RunningBatch};
 pub use ya_client::web::{WebClient, WebClientBuilder};
 
 use futures::prelude::*;
@@ -26,7 +26,7 @@ impl Session {
     pub async fn create_activity(
         &self,
         agreement: &market::Agreement,
-    ) -> anyhow::Result<impl activity::Activity> {
+    ) -> anyhow::Result<activity::DefaultActivity> {
         activity::DefaultActivity::create(
             self.client.interface()?,
             agreement.id(),
@@ -38,8 +38,13 @@ impl Session {
     pub async fn create_secure_activity(
         &self,
         agreement: &market::Agreement,
-    ) -> anyhow::Result<impl activity::Activity> {
-        activity::SgxActivity::create(self.client.interface()?, agreement.id()).await
+    ) -> anyhow::Result<activity::SgxActivity> {
+        activity::SgxActivity::create(
+            self.client.interface()?,
+            agreement.id(),
+            self.drop_list.clone().into(),
+        )
+        .await
     }
 
     pub async fn with<F: Future>(&self, work: F) -> Option<F::Output> {
