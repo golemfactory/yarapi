@@ -863,9 +863,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "graphene"
-version = "0.3.1"
-source = "git+https://github.com/golemfactory/graphene-rust.git#e5a78fffd40901142fc191ef8d08f88734802ae7"
+name = "graphene-sgx"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6b8d7d5d63c19e9e0021ecd3cee9b51686d17a8aca22fd15073c0f580027fee"
 dependencies = [
  "anyhow",
  "base64",
@@ -2375,7 +2376,7 @@ dependencies = [
 [[package]]
 name = "ya-client"
 version = "0.3.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef#9876f116107de0b3521352e97ef766dceb10c4ef"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=0efbf2f875d804a283d162fc9e1679516be08900#0efbf2f875d804a283d162fc9e1679516be08900"
 dependencies = [
  "awc",
  "backtrace",
@@ -2384,7 +2385,7 @@ dependencies = [
  "envy",
  "failure",
  "futures",
- "graphene",
+ "graphene-sgx",
  "hex",
  "lazy_static",
  "log",
@@ -2395,13 +2396,13 @@ dependencies = [
  "serde_json",
  "thiserror",
  "url",
- "ya-client-model 0.1.0 (git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef)",
+ "ya-client-model 0.1.0 (git+https://github.com/golemfactory/ya-client.git?rev=0efbf2f875d804a283d162fc9e1679516be08900)",
 ]
 
 [[package]]
 name = "ya-client-model"
 version = "0.1.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=9876f116107de0b3521352e97ef766dceb10c4ef#9876f116107de0b3521352e97ef766dceb10c4ef"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=0efbf2f875d804a283d162fc9e1679516be08900#0efbf2f875d804a283d162fc9e1679516be08900"
 dependencies = [
  "bigdecimal",
  "chrono",
