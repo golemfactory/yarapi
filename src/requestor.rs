@@ -223,7 +223,6 @@ impl Requestor {
                 .with_context(|| {
                     format!("can't create activity for agreement [{:?}]", agreement_id)
                 })?;
-
                 let activity_id = activity.activity_id.clone();
                 let task = activity.task.clone();
                 let fut = monitor_activity(activity, ctx.payment_manager.clone()).then(
@@ -243,7 +242,7 @@ impl Requestor {
 
                 Ok::<_, Error>(())
             }
-            .map_err(|e| log::error!("activity error: {}", e))
+            .map_err(|e: anyhow::Error| log::error!("activity error: {:?}", e))
             .then(|_| async move { () })
         });
 

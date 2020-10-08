@@ -1,6 +1,6 @@
 [package]
 name = "yarapi"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Golem Factory <contact@golem.network>"]
 edition = "2018"
 homepage = "https://github.com/golemfactory/yarapi"
@@ -12,8 +12,7 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { version = "0.3", features = ["sgx"] }
-ya-client-model = "0.1"
+ya-client = { version = "0.4", features = ["sgx"] }
 gftp = "0.1"
 ya-agreement-utils = "0.1"
 
@@ -36,6 +35,10 @@ url = "2.1.1"
 [dev-dependencies]
 structopt = "0.3"
 
-[patch.crates-io]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "62cab235ea07e7ec2c9c04148a63e09cd299da24"}
-ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", rev = "62cab235ea07e7ec2c9c04148a63e09cd299da24"}
+[package.metadata.release]
+no-dev-version = true
+enable-all-features = true
+
+
+#[patch.crates-io]
+#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "0efbf2f875d804a283d162fc9e1679516be08900"}

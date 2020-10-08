@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::requestor::command::{CommandList, ExeScript};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
 use ya_client::model::activity::{ActivityState, ExeScriptCommandResult};
 
@@ -43,7 +43,10 @@ impl Activity {
             agreement_id,
             activity_id,
             task: task.clone(),
-            script: task.into_exe_script().await?,
+            script: task
+                .into_exe_script()
+                .await
+                .with_context(|| "building exe-script")?,
         })
     }
 
