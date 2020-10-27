@@ -80,7 +80,6 @@ pub struct Requestor {
     image_type: Image,
     task_package: Package,
     constraints: Constraints,
-    secure: bool,
     tasks: Vec<CommandList>,
     timeout: Duration,
     budget: BigDecimal,
@@ -98,21 +97,12 @@ impl Requestor {
             image_type,
             task_package,
             constraints: constraints!["golem.com.pricing.model" == "linear"], /* TODO: other models */
-            secure: false,
             tasks: vec![],
             timeout: Duration::from_secs(300),
             budget: 0.into(),
             state: ComputationState::AwaitingProviders,
             tracker: ComputationTracker::default(),
             on_completed: None,
-        }
-    }
-
-    /// Compute in a Trusted Execution Environment.
-    pub fn secure(self) -> Self {
-        Self {
-            secure: true,
-            ..self
         }
     }
 
@@ -186,7 +176,6 @@ impl Requestor {
         let subscription_id = market_api.subscribe(&demand).await?;
         log::info!("subscribed to market (id: [{}])", subscription_id);
 
-        let secure = self.secure;
         let timeout = self.timeout;
         let payment_manager = PaymentManager::new(payment_api.clone(), allocation).start();
         let requestor = self.start();
@@ -217,7 +206,6 @@ impl Requestor {
                     ctx.activity_api.clone(),
                     agreement_id.clone(),
                     task.clone(),
-                    secure,
                 )
                 .await
                 .with_context(|| {
@@ -410,10 +398,10 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
         agreement_id,
         proposal.issuer_id()
     );
-    let _ = market_api.confirm_agreement(&id).await?;
+    let _ = market_api.confirm_agreement(&agreement_id).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&id, Some(10.0)).await?;
+    let response = market_api.wait_for_approval(&agreement_id, Some(10.0)).await?;
     match response.trim().to_lowercase().as_str() {
         "approved" => Ok(agreement_id),
         res => Err(anyhow::anyhow!(
