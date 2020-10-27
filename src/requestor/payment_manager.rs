@@ -102,6 +102,8 @@ impl PaymentManager {
                         for invoice in invoices {
                             let api = this.payment_api.clone();
 
+                            log::debug!("Valid agreements left: {:#?}", this.valid_agreements);
+
                             if this.valid_agreements.remove(&invoice.agreement_id) {
                                 let invoice_id = invoice.invoice_id;
                                 log::info!(
@@ -166,6 +168,23 @@ impl Handler<AcceptAgreement> for PaymentManager {
 
     fn handle(&mut self, msg: AcceptAgreement, _ctx: &mut Self::Context) -> Self::Result {
         self.valid_agreements.insert(msg.agreement_id);
+        Ok(())
+    }
+}
+
+pub struct RejectAgreement {
+    pub agreement_id: String,
+}
+
+impl Message for RejectAgreement {
+    type Result = anyhow::Result<()>;
+}
+
+impl Handler<RejectAgreement> for PaymentManager {
+    type Result = anyhow::Result<()>;
+
+    fn handle(&mut self, msg: RejectAgreement, _ctx: &mut Self::Context) -> Self::Result {
+        self.valid_agreements.remove(&msg.agreement_id);
         Ok(())
     }
 }

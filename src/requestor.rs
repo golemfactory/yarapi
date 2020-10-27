@@ -35,7 +35,10 @@ use ya_client::{
     web::WebClient,
 };
 
-use crate::requestor::{activity::Activity, payment_manager::ReleaseAllocation};
+use crate::requestor::{
+    activity::Activity,
+    payment_manager::{RejectAgreement, ReleaseAllocation},
+};
 pub use crate::requestor::{
     command::{Command, CommandList},
     package::{Image, Package},
@@ -202,15 +205,12 @@ impl Requestor {
                     .await
                     .with_context(|| format!("no tasks for agreement [{:?}]", agreement_id))?;
 
-                let activity = Activity::create(
-                    ctx.activity_api.clone(),
-                    agreement_id.clone(),
-                    task.clone(),
-                )
-                .await
-                .with_context(|| {
-                    format!("can't create activity for agreement [{:?}]", agreement_id)
-                })?;
+                let activity =
+                    Activity::create(ctx.activity_api.clone(), agreement_id.clone(), task.clone())
+                        .await
+                        .with_context(|| {
+                            format!("can't create activity for agreement [{:?}]", agreement_id)
+                        })?;
 
                 let activity_id = activity.activity_id.clone();
                 let task = activity.task.clone();
@@ -222,6 +222,8 @@ impl Requestor {
                             }
                             Err(e) => {
                                 log::error!("activity [{}] error: {}", activity_id, e);
+                                ctx.payment_manager
+                                    .do_send(RejectAgreement { agreement_id: agreement_id.clone() });
                                 ctx.requestor.do_send(ReturnTask(task));
                             }
                         }
@@ -401,7 +403,9 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
     let _ = market_api.confirm_agreement(&agreement_id).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&agreement_id, Some(10.0)).await?;
+    let response = market_api
+        .wait_for_approval(&agreement_id, Some(10.0))
+        .await?;
     match response.trim().to_lowercase().as_str() {
         "approved" => Ok(agreement_id),
         res => Err(anyhow::anyhow!(
