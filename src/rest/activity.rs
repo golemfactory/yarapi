@@ -41,12 +41,13 @@ pub trait Activity {
 
 pub trait RunningBatch {
     fn id(&self) -> &str;
+    fn commands(&self) -> Vec<ExeScriptCommand>;
 
     fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>>;
 }
 
 pub struct DefaultActivity {
-    api: ActivityRequestorApi,
+    pub(crate) api: ActivityRequestorApi,
     activity_id: String,
     drop_list: Option<DropList>,
 }
@@ -138,8 +139,8 @@ impl Activity for DefaultActivity {
 }
 
 pub struct DefaultBatch {
-    api: ActivityRequestorApi,
-    activity_id: String,
+    pub(crate) api: ActivityRequestorApi,
+    pub(crate) activity_id: String,
     batch_id: String,
     commands: Arc<[ExeScriptCommand]>,
 }
@@ -203,6 +204,10 @@ where
 impl RunningBatch for DefaultBatch {
     fn id(&self) -> &str {
         &self.batch_id
+    }
+
+    fn commands(&self) -> Vec<ExeScriptCommand> {
+        self.commands.iter().cloned().collect()
     }
 
     fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>> {
@@ -328,6 +333,10 @@ pub struct SgxBatch {
 impl RunningBatch for SgxBatch {
     fn id(&self) -> &str {
         &self.batch_id
+    }
+
+    fn commands(&self) -> Vec<ExeScriptCommand> {
+        self.commands.iter().cloned().collect()
     }
 
     fn events(&self) -> LocalBoxStream<'static, Result<Event>> {
