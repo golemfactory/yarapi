@@ -262,6 +262,14 @@ impl Agreement {
         Ok(())
     }
 
+    pub async fn content(&self) -> anyhow::Result<ya_client::model::market::Agreement> {
+        Ok(self
+            .inner
+            .api
+            .get_agreement(&self.inner.agreement_id)
+            .await?)
+    }
+
     pub fn id(&self) -> &str {
         &self.inner.agreement_id
     }
