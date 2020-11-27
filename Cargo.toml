@@ -12,8 +12,8 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "cf9838499aaeb2a54c4ad56d1601c4579a66e7cc", features = ["sgx"] }
-gftp = "0.1"
+ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f", features = ["sgx"] }
+gftp = "0.1.2"
 ya-agreement-utils = "0.1"
 
 actix = "0.9"
