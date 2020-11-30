@@ -2,8 +2,11 @@
 
 use crate::requestor::command::{CommandList, ExeScript};
 use anyhow::{Context, Result};
+use futures::future::{self, LocalBoxFuture};
+use futures::{FutureExt, StreamExt};
+use std::sync::Arc;
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
-use ya_client::model::activity::{ActivityState, ExeScriptCommandResult};
+use ya_client::model::activity::{ActivityState, ExeScriptCommandResult, RuntimeEvent};
 
 #[derive(Clone)]
 enum ActivityKind {
@@ -93,6 +96,30 @@ impl Activity {
             }
         };
         Ok(vec)
+    }
+
+    pub fn stream_exec_batch_results<'f>(
+        &self,
+        batch_id: String,
+        f: Arc<dyn Fn(RuntimeEvent)>,
+    ) -> LocalBoxFuture<'f, Result<()>> {
+        match &self.kind {
+            ActivityKind::Default => {
+                let api = self.api.control().clone();
+                let activity_id = self.activity_id.clone();
+
+                async move {
+                    let stream = api
+                        .stream_exec_batch_results(&activity_id, &batch_id)
+                        .await?;
+                    stream.for_each(|e| future::ready((*f)(e))).map(Ok).await
+                }
+                .boxed_local()
+            }
+            ActivityKind::Secure(_) => {
+                future::err(anyhow::anyhow!("Streaming not supported")).boxed_local()
+            }
+        }
     }
 
     pub async fn get_state(&self) -> Result<ActivityState> {

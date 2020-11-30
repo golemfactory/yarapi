@@ -25,10 +25,10 @@ use ya_client::{
     market::MarketRequestorApi,
     model::{
         self,
-        activity::CommandResult,
+        activity::{CommandResult, RuntimeEvent},
         market::{
             proposal::{Proposal, State},
-            AgreementProposal, Demand, RequestorEvent,
+            AgreementProposal, NewDemand, RequestorEvent,
         },
     },
     payment::PaymentRequestorApi,
@@ -87,6 +87,7 @@ pub struct Requestor {
     state: ComputationState,
     tracker: ComputationTracker,
     on_completed: Option<Arc<dyn Fn(String, Vec<String>)>>,
+    on_event: Option<Arc<dyn Fn(RuntimeEvent)>>,
 }
 
 impl Requestor {
@@ -105,6 +106,7 @@ impl Requestor {
             state: ComputationState::AwaitingProviders,
             tracker: ComputationTracker::default(),
             on_completed: None,
+            on_event: None,
         }
     }
 
@@ -160,6 +162,13 @@ impl Requestor {
         }
     }
 
+    pub fn on_event<T: Fn(RuntimeEvent) + 'static>(self, f: T) -> Self {
+        Self {
+            on_event: Some(Arc::new(f)),
+            ..self
+        }
+    }
+
     /// Runs all tasks asynchronously.
     pub async fn run(self) -> Result<()> {
         let app_key = std::env::var("YAGNA_APPKEY")?;
@@ -168,6 +177,7 @@ impl Requestor {
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
         let payment_api: PaymentRequestorApi = client.interface()?;
+        let on_event = self.on_event.clone();
 
         let demand = self.create_demand().await?;
         log::debug!("demand: {}", serde_json::to_string_pretty(&demand)?);
@@ -200,6 +210,7 @@ impl Requestor {
         };
 
         let compute = proposal_rx.for_each_concurrent(MAX_CONCURRENT_JOBS, move |proposal| {
+            let on_event = on_event.clone();
             let ctx = proposal_ctx.clone();
             async move {
                 let proposal_id = proposal.proposal_id.clone();
@@ -223,10 +234,11 @@ impl Requestor {
                 .with_context(|| {
                     format!("can't create activity for agreement [{:?}]", agreement_id)
                 })?;
+
                 let activity_id = activity.activity_id.clone();
                 let task = activity.task.clone();
-                let fut = monitor_activity(activity, ctx.payment_manager.clone()).then(
-                    |result| async move {
+                let fut = monitor_activity(activity, ctx.payment_manager.clone(), on_event.clone())
+                    .then(|result| async move {
                         match result {
                             Ok(o) => {
                                 ctx.requestor.do_send(FinishTask(activity_id, o));
@@ -236,8 +248,7 @@ impl Requestor {
                                 ctx.requestor.do_send(ReturnTask(task));
                             }
                         }
-                    },
-                );
+                    });
                 Arbiter::spawn(fut);
 
                 Ok::<_, Error>(())
@@ -294,7 +305,7 @@ impl Requestor {
         Ok(())
     }
 
-    async fn create_demand(&self) -> Result<Demand> {
+    async fn create_demand(&self) -> Result<NewDemand> {
         // "golem.node.debug.subnet" == "mysubnet", TODO
         let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
@@ -307,7 +318,7 @@ impl Requestor {
         log::debug!("srv.comp.task_package: {}", url_with_hash);
 
         let deadline = chrono::Utc::now() + chrono::Duration::from_std(self.timeout.clone())?;
-        let demand = Demand::new(
+        let demand = NewDemand::new(
             serde_json::json!({
                 "golem.node.id.name": self.name,
                 "golem.node.debug.subnet": self.subnet.clone(),
@@ -325,7 +336,7 @@ async fn process_market_events(
     requestor: Addr<Requestor>,
     market_api: MarketRequestorApi,
     subscription_id: String,
-    demand: Demand,
+    demand: NewDemand,
     mut tx: mpsc::Sender<Proposal>,
 ) {
     log::info!("processing market events");
@@ -352,22 +363,21 @@ async fn process_market_events(
                 RequestorEvent::ProposalEvent {
                     event_date: _,
                     proposal,
-                } => match proposal.state.as_ref().unwrap_or(&State::Initial) {
+                } => match proposal.state {
                     State::Initial => {
                         log::debug!("answering with counter proposal");
-                        let bespoke_proposal = match proposal.counter_demand(demand.clone()) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                log::error!("counter demand error {}", e);
-                                continue;
-                            }
-                        };
 
                         let market_api_clone = market_api.clone();
                         let subscription_id_clone = subscription_id.clone();
+                        let counter_proposal = demand.clone();
+
                         Arbiter::spawn(async move {
                             if let Err(e) = market_api_clone
-                                .counter_proposal(&bespoke_proposal, &subscription_id_clone)
+                                .counter_proposal(
+                                    &counter_proposal,
+                                    &subscription_id_clone,
+                                    &proposal.proposal_id,
+                                )
                                 .await
                             {
                                 log::error!("unable to counter proposal: {}", e);
@@ -397,7 +407,7 @@ async fn process_market_events(
 }
 
 async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) -> Result<String> {
-    let id = proposal.proposal_id()?;
+    let id = proposal.proposal_id;
     let agreement = AgreementProposal::new(
         id.clone(),
         chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
@@ -407,12 +417,14 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
     log::info!(
         "created agreement [{}] with [{:?}]; confirming",
         agreement_id,
-        proposal.issuer_id()
+        &proposal.issuer_id
     );
-    let _ = market_api.confirm_agreement(&id).await?;
+    let _ = market_api.confirm_agreement(&agreement_id, None).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&id, Some(10.0)).await?;
+    let response = market_api
+        .wait_for_approval(&agreement_id, Some(10.0))
+        .await?;
     match response.trim().to_lowercase().as_str() {
         "approved" => Ok(agreement_id),
         res => Err(anyhow::anyhow!(
@@ -425,6 +437,7 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
 async fn monitor_activity(
     activity: Activity,
     payment_manager: Addr<PaymentManager>,
+    on_event: Option<Arc<dyn Fn(RuntimeEvent)>>,
 ) -> Result<Vec<String>> {
     let _ = payment_manager
         .send(payment_manager::AcceptAgreement {
@@ -437,6 +450,15 @@ async fn monitor_activity(
         .exec()
         .await
         .map_err(|e| anyhow::anyhow!("exec failed: {}", e))?;
+
+    if let Some(f) = on_event {
+        let fut = activity.stream_exec_batch_results(batch_id.clone(), f);
+        Arbiter::spawn(async move {
+            if let Err(e) = fut.await {
+                log::error!("Stream error: {}", e);
+            }
+        })
+    }
 
     let delay = Duration::from_secs(3);
     let mut results = vec![];

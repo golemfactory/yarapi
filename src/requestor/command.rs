@@ -88,10 +88,14 @@ impl CommandList {
                         anyhow!("expected at least one entry in Command::Run: entry_point")
                     })?;
                     obj.insert("entry_point".to_string(), json!(entry_point));
+                    obj.insert("capture".to_string(), json!({
+                        "stdout": { "stream": {} },
+                        "stderr": { "stream": {} }
+                    }));
                     if let Some(args) = vec.get(1..) {
                         obj.insert("args".to_string(), json!(args));
                     }
-                    json!({ "run": obj })
+                    json!({"run": obj})
                 }
                 Command::Transfer { from, to } => json!({"transfer": { "from": from, "to": to }}),
                 Command::Upload { from, to } => serde_json::json!({ "transfer": {
