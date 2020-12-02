@@ -41,6 +41,24 @@ impl StreamingBatch {
             .stream_exec_batch_results(&self.activity_id, &self.batch_id)
             .await?)
     }
+
+    pub async fn wait_for_finish(&self) -> anyhow::Result<()> {
+        let last = self.commands.len() - 1;
+
+        loop {
+            let results = self
+                .api
+                .control()
+                .get_exec_batch_results(&self.activity_id, &self.batch_id, Some(30.0), Some(last))
+                .await?;
+            if !results.is_empty() {
+                let last_result = results.last().unwrap();
+                if last_result.is_batch_finished {
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
 
 impl StreamingActivity for DefaultActivity {
