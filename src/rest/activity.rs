@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
 use futures::future::LocalBoxFuture;
@@ -70,6 +70,30 @@ impl DefaultActivity {
             activity_id,
             drop_list,
         })
+    }
+
+    pub async fn execute_commands(
+        &self,
+        commands: Vec<ExeScriptCommand>,
+    ) -> anyhow::Result<Vec<String>> {
+        let batch = self.exec(commands).await?;
+        batch
+            .events()
+            .and_then(|event| {
+                log::debug!("Event: {:?}", event);
+                match event {
+                    Event::StepFailed { message } => {
+                        future::err::<String, anyhow::Error>(anyhow!("Step failed: {}", message))
+                    }
+                    Event::StepSuccess { command, output } => {
+                        log::debug!("Command [{:?}] finished.", command);
+                        log::debug!("Command result:\n {}", output);
+                        future::ok(output)
+                    }
+                }
+            })
+            .try_collect()
+            .await
     }
 }
 
