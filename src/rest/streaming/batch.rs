@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use futures::prelude::*;
 use futures::FutureExt;
 use std::sync::Arc;
@@ -9,7 +9,7 @@ use crate::rest::{Activity, RunningBatch};
 use ya_client::activity::ActivityRequestorApi;
 pub use ya_client::model::activity::Credentials;
 pub use ya_client::model::activity::ExeScriptCommand;
-use ya_client::model::activity::RuntimeEvent;
+use ya_client::model::activity::{CommandResult, RuntimeEvent};
 
 pub struct StreamingBatch {
     api: ActivityRequestorApi,
@@ -54,7 +54,13 @@ impl StreamingBatch {
             if !results.is_empty() {
                 let last_result = results.last().unwrap();
                 if last_result.is_batch_finished {
-                    return Ok(());
+                    return match last_result.result {
+                        CommandResult::Ok => Ok(()),
+                        CommandResult::Error => Err(anyhow!(last_result
+                            .message
+                            .clone()
+                            .unwrap_or("".to_string()))),
+                    };
                 }
             }
         }
