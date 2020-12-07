@@ -1,4 +1,5 @@
 mod batch;
+mod capture_messages;
 mod forward_to_file;
 mod forward_to_std;
 mod messaging;
