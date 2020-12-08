@@ -2441,7 +2441,7 @@ dependencies = [
 [[package]]
 name = "ya-agreement-utils"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/yagna.git?rev=75e8e3cc28c8dfeb4b1e319e36c2134a23367c19#75e8e3cc28c8dfeb4b1e319e36c2134a23367c19"
+source = "git+https://github.com/golemfactory/yagna.git?rev=a556eebdf10396124b3cf43b719e7ca9ea85e984#a556eebdf10396124b3cf43b719e7ca9ea85e984"
 dependencies = [
  "serde",
  "serde_json",
