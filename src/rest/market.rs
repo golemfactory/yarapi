@@ -236,7 +236,7 @@ async fn proposals_collector(
                         data: proposal,
                     };
 
-                    log::info!(
+                    log::debug!(
                         "Got proposal: {} -- from: {}, state: {:?}",
                         proposal.id(),
                         proposal.issuer_id(),
