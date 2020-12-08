@@ -61,9 +61,18 @@ impl<MessageType: ExeUnitMessage> MessageProcessor<MessageType> {
                 output = match output.iter().position(|byte| *byte == 0x03 as u8) {
                     Some(idx) => {
                         self.buffer.extend(output[..idx].iter());
-                        if let Ok(msg) = self.deserialize_message(&self.buffer) {
-                            // TODO: How should we handle failed send here?
-                            self.notifier.send(msg).ok();
+                        match self.deserialize_message(&self.buffer) {
+                            Ok(msg) => {
+                                // TODO: How should we handle failed send here?
+                                self.notifier.send(msg).ok();
+                            }
+                            Err(_) => {
+                                // If we can't deserialize message, we should return it back
+                                // to output. Maybe there is next MessageProcessor, that can deserialize it.
+                                self.buffer[0] = 0x02 as u8;
+                                self.buffer.push(0x03 as u8);
+                                leftovers.extend(self.buffer.iter());
+                            }
                         }
                         self.buffer.clear();
                         &output[idx + 1..]
@@ -182,7 +191,7 @@ mod tests {
     impl ExeUnitMessage for Messages {}
 
     #[tokio::test]
-    async fn test_messages_only_messages_single_output() {
+    async fn test_messaging_only_messages_single_output() {
         let msg1 = encode_message(&Messages::Progress(0.2)).unwrap();
         let msg2 = encode_message(&Messages::Progress(0.5)).unwrap();
 
@@ -218,7 +227,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_messages_single_message_surrounded() {
+    async fn test_messaging_single_message_surrounded() {
         let msg1 = encode_message(&Messages::Progress(0.2)).unwrap();
         let before = "Pretty weather is today".to_string();
         let after = "Execution finished".to_string();
@@ -260,6 +269,200 @@ mod tests {
         assert!(msg1.is_some());
         match msg1.unwrap() {
             Messages::Progress(value) => assert_eq!(value, 0.2),
+            _ => panic!("Expected Messages::Progress"),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_messaging_split_single_message() {
+        let msg1 = encode_message(&Messages::Progress(0.2)).unwrap();
+        let before = "Pretty weather is today".to_string();
+        let after = "Execution finished".to_string();
+
+        let content: Vec<u8> = before
+            .as_bytes()
+            .iter()
+            .chain(msg1.iter())
+            .chain(after.as_bytes().iter())
+            .cloned()
+            .collect();
+
+        println!("{}", std::str::from_utf8(&content).unwrap());
+
+        let outputs = content
+            .chunks(4)
+            .map(|chunk| CommandOutput::Bin(chunk.to_vec()))
+            .collect::<Vec<CommandOutput>>();
+
+        let (sender, mut receiver) = mpsc::unbounded_channel::<Messages>();
+        let mut processor = MessageProcessor {
+            notifier: sender,
+            buffer: vec![],
+        };
+
+        let remaining = outputs
+            .into_iter()
+            .filter_map(|output| processor.consume_message(output))
+            .map(|output| match output {
+                CommandOutput::Str(text) => text.as_bytes().iter().cloned().collect(),
+                CommandOutput::Bin(bin) => bin,
+            })
+            .inspect(|bin| println!("{}", std::str::from_utf8(&bin).unwrap()))
+            .flatten()
+            .collect::<Vec<u8>>();
+
+        let expected = before
+            .as_bytes()
+            .iter()
+            .chain(after.as_bytes().iter())
+            .cloned()
+            .collect::<Vec<u8>>();
+        assert_eq!(
+            std::str::from_utf8(&remaining).unwrap(),
+            std::str::from_utf8(&expected).unwrap()
+        );
+
+        let msg1 = receiver.recv().await;
+
+        assert!(msg1.is_some());
+        match msg1.unwrap() {
+            Messages::Progress(value) => assert_eq!(value, 0.2),
+            _ => panic!("Expected Messages::Progress"),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_messaging_split_multi_messages() {
+        let msg1 = encode_message(&Messages::Progress(0.2)).unwrap();
+        let msg2 = encode_message(&Messages::Info("bla bla blabla".to_string())).unwrap();
+        let before = "Pretty weather is today".to_string();
+        let between = "Between log here.".to_string();
+        let after = "Execution finished".to_string();
+
+        let content: Vec<u8> = before
+            .as_bytes()
+            .iter()
+            .chain(msg1.iter())
+            .chain(between.as_bytes().iter())
+            .chain(msg2.iter())
+            .chain(after.as_bytes().iter())
+            .cloned()
+            .collect();
+
+        println!("{}", std::str::from_utf8(&content).unwrap());
+
+        let outputs = content
+            .chunks(4)
+            .map(|chunk| CommandOutput::Bin(chunk.to_vec()))
+            .collect::<Vec<CommandOutput>>();
+
+        let (sender, mut receiver) = mpsc::unbounded_channel::<Messages>();
+        let mut processor = MessageProcessor {
+            notifier: sender,
+            buffer: vec![],
+        };
+
+        let remaining = outputs
+            .into_iter()
+            .filter_map(|output| processor.consume_message(output))
+            .map(|output| match output {
+                CommandOutput::Str(text) => text.as_bytes().iter().cloned().collect(),
+                CommandOutput::Bin(bin) => bin,
+            })
+            .inspect(|bin| println!("{}", std::str::from_utf8(&bin).unwrap()))
+            .flatten()
+            .collect::<Vec<u8>>();
+
+        let expected = before
+            .as_bytes()
+            .iter()
+            .chain(between.as_bytes().iter())
+            .chain(after.as_bytes().iter())
+            .cloned()
+            .collect::<Vec<u8>>();
+        assert_eq!(
+            std::str::from_utf8(&remaining).unwrap(),
+            std::str::from_utf8(&expected).unwrap()
+        );
+
+        let msg1 = receiver.recv().await;
+        let msg2 = receiver.recv().await;
+
+        assert!(msg1.is_some());
+        match msg1.unwrap() {
+            Messages::Progress(value) => assert_eq!(value, 0.2),
+            _ => panic!("Expected Messages::Progress"),
+        };
+
+        assert!(msg2.is_some());
+        match msg2.unwrap() {
+            Messages::Info(value) => assert_eq!(&value, "bla bla blabla"),
+            _ => panic!("Expected Messages::Progress"),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_messaging_split_only_messages() {
+        let msg1 = encode_message(&Messages::Progress(0.2)).unwrap();
+        let msg2 = encode_message(&Messages::Info("bla bla blabla".to_string())).unwrap();
+        let msg3 = encode_message(&Messages::Progress(0.5)).unwrap();
+
+        let content: Vec<u8> = msg1
+            .iter()
+            .chain(msg2.iter())
+            .chain(msg3.iter())
+            .cloned()
+            .collect();
+
+        println!("{}", std::str::from_utf8(&content).unwrap());
+
+        let outputs = content
+            .chunks(4)
+            .map(|chunk| CommandOutput::Bin(chunk.to_vec()))
+            .collect::<Vec<CommandOutput>>();
+
+        let (sender, mut receiver) = mpsc::unbounded_channel::<Messages>();
+        let mut processor = MessageProcessor {
+            notifier: sender,
+            buffer: vec![],
+        };
+
+        let remaining = outputs
+            .into_iter()
+            .filter_map(|output| processor.consume_message(output))
+            .map(|output| match output {
+                CommandOutput::Str(text) => text.as_bytes().iter().cloned().collect(),
+                CommandOutput::Bin(bin) => bin,
+            })
+            .inspect(|bin| println!("{}", std::str::from_utf8(&bin).unwrap()))
+            .flatten()
+            .collect::<Vec<u8>>();
+
+        let expected = vec![];
+        assert_eq!(
+            std::str::from_utf8(&remaining).unwrap(),
+            std::str::from_utf8(&expected).unwrap()
+        );
+
+        let msg1 = receiver.recv().await;
+        let msg2 = receiver.recv().await;
+        let msg3 = receiver.recv().await;
+
+        assert!(msg1.is_some());
+        match msg1.unwrap() {
+            Messages::Progress(value) => assert_eq!(value, 0.2),
+            _ => panic!("Expected Messages::Progress"),
+        };
+
+        assert!(msg2.is_some());
+        match msg2.unwrap() {
+            Messages::Info(value) => assert_eq!(&value, "bla bla blabla"),
+            _ => panic!("Expected Messages::Progress"),
+        };
+
+        assert!(msg3.is_some());
+        match msg3.unwrap() {
+            Messages::Progress(value) => assert_eq!(value, 0.5),
             _ => panic!("Expected Messages::Progress"),
         };
     }
