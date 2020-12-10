@@ -7,9 +7,9 @@ use crate::rest::activity::DefaultActivity;
 use crate::rest::{Activity, RunningBatch};
 
 use ya_client::activity::ActivityRequestorApi;
-pub use ya_client::model::activity::Credentials;
-pub use ya_client::model::activity::ExeScriptCommand;
+use ya_client::model::activity::{Capture, CaptureFormat, CaptureMode};
 use ya_client::model::activity::{CommandResult, RuntimeEvent};
+pub use ya_client::model::activity::{Credentials, ExeScriptCommand};
 
 pub struct StreamingBatch {
     api: ActivityRequestorApi,
@@ -22,6 +22,12 @@ pub trait StreamingActivity {
     fn exec_streaming(
         &self,
         commands: Vec<ExeScriptCommand>,
+    ) -> future::LocalBoxFuture<'static, Result<StreamingBatch>>;
+
+    fn run_streaming(
+        &self,
+        entry_point: &str,
+        args: Vec<String>,
     ) -> future::LocalBoxFuture<'static, Result<StreamingBatch>>;
 }
 
@@ -82,5 +88,27 @@ impl StreamingActivity for DefaultActivity {
             })
         }
         .boxed_local()
+    }
+
+    fn run_streaming(
+        &self,
+        entry_point: &str,
+        args: Vec<String>,
+    ) -> future::LocalBoxFuture<'static, Result<StreamingBatch>> {
+        let capture = Some(CaptureMode::Stream {
+            limit: None,
+            format: Some(CaptureFormat::Str),
+        });
+
+        let commands = vec![ExeScriptCommand::Run {
+            entry_point: entry_point.to_string(),
+            args: args.clone(),
+            capture: Some(Capture {
+                stdout: capture.clone(),
+                stderr: capture,
+            }),
+        }];
+
+        self.exec_streaming(commands)
     }
 }
