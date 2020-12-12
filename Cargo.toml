@@ -36,6 +36,8 @@ sha3 = "0.9.1"
 tokio = { version = "0.2.10", features = ["fs"] }
 url = "2.1.1"
 
+notify = "4.0.12"
+
 [dev-dependencies]
 structopt = "0.3"
 tokio = { version = "0.2.10", features = ["macros"] }

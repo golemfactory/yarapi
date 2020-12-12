@@ -1,6 +1,14 @@
+use anyhow::anyhow;
+use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::fs;
 use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 
 pub trait ExeUnitMessage: Serialize + DeserializeOwned + Send + Sync {}
 
@@ -22,4 +30,96 @@ pub fn send_to_guest(msg: &impl ExeUnitMessage) -> anyhow::Result<()> {
     //let mut stdout = stdout.lock();
     stdout.write(data.as_ref())?;
     Ok(())
+}
+
+pub struct MessagesReceiver {
+    new_message_notifier: broadcast::Sender<PathBuf>,
+}
+
+impl MessagesReceiver {
+    pub fn new() -> anyhow::Result<Arc<Self>> {
+        let tracked_dir = PathBuf::from("/messages/");
+
+        std::fs::create_dir_all(&tracked_dir).map_err(|e| {
+            anyhow!(
+                "Can't create directory [{}] for messages. {}",
+                &tracked_dir.display(),
+                e
+            )
+        })?;
+
+        let sender = spawn_file_notifier(&tracked_dir)?;
+
+        Ok(Arc::new(MessagesReceiver {
+            new_message_notifier: sender,
+        }))
+    }
+
+    pub fn listen<MsgType: ExeUnitMessage + 'static>(&self) -> mpsc::UnboundedReceiver<MsgType> {
+        let (msg_sender, msg_receiver) = mpsc::unbounded_channel();
+        let mut file_receiver = self.new_message_notifier.subscribe();
+
+        let future = async move {
+            while let Ok(path) = file_receiver.recv().await {
+                if let Some(content) = fs::read_to_string(&path)
+                    .map_err(|e| {
+                        log::warn!(
+                            "[Messaging] Can't load msg from file: '{}'. {}",
+                            &path.display(),
+                            e
+                        )
+                    })
+                    .ok()
+                {
+                    serde_json::from_slice::<MsgType>(&content[1..content.len() - 1].as_bytes())
+                        .map_err(|e| {
+                            log::warn!(
+                                "Can't deserialize message from file '{}'. {}",
+                                &path.display(),
+                                e
+                            )
+                        })
+                        .map(|msg| msg_sender.send(msg))
+                        .ok();
+                }
+            }
+        };
+        tokio::spawn(future);
+        return msg_receiver;
+    }
+}
+
+fn spawn_file_notifier(tracked_dir: &Path) -> anyhow::Result<broadcast::Sender<PathBuf>> {
+    let (event_sender, _) = broadcast::channel(150);
+    let sender = event_sender.clone();
+
+    let (watcher_sender, watcher_receiver) = std::sync::mpsc::channel();
+    let mut watcher = watcher(watcher_sender, Duration::from_secs(1))
+        .map_err(|e| anyhow!("Initializing watcher failed. {}", e))?;
+
+    watcher
+        .watch(&tracked_dir, RecursiveMode::NonRecursive)
+        .map_err(|e| {
+            anyhow!(
+                "Starting watching directory '{}' failed. {}",
+                &tracked_dir.display(),
+                e
+            )
+        })?;
+
+    std::thread::spawn(move || {
+        // Take ownership of watcher.
+        let _watcher = watcher;
+
+        while let Ok(event) = watcher_receiver.recv() {
+            match event {
+                DebouncedEvent::Write(path) => {
+                    event_sender.send(path).ok();
+                }
+                _ => (),
+            }
+        }
+    });
+
+    Ok(sender)
 }
