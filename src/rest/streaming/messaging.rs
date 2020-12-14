@@ -1,12 +1,11 @@
 use anyhow::anyhow;
-use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
+use notify::{raw_watcher, Op, RecursiveMode, Watcher};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 
@@ -32,14 +31,12 @@ pub fn send_to_guest(msg: &impl ExeUnitMessage) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub struct MessagesReceiver {
+pub struct MessagingExeUnit {
     new_message_notifier: broadcast::Sender<PathBuf>,
 }
 
-impl MessagesReceiver {
-    pub fn new() -> anyhow::Result<Arc<Self>> {
-        let tracked_dir = PathBuf::from("/messages/");
-
+impl MessagingExeUnit {
+    pub fn new(tracked_dir: &Path) -> anyhow::Result<Arc<Self>> {
         std::fs::create_dir_all(&tracked_dir).map_err(|e| {
             anyhow!(
                 "Can't create directory [{}] for messages. {}",
@@ -50,7 +47,7 @@ impl MessagesReceiver {
 
         let sender = spawn_file_notifier(&tracked_dir)?;
 
-        Ok(Arc::new(MessagesReceiver {
+        Ok(Arc::new(MessagingExeUnit {
             new_message_notifier: sender,
         }))
     }
@@ -71,7 +68,7 @@ impl MessagesReceiver {
                     })
                     .ok()
                 {
-                    serde_json::from_slice::<MsgType>(&content[1..content.len() - 1].as_bytes())
+                    serde_json::from_slice::<MsgType>(&content.as_bytes())
                         .map_err(|e| {
                             log::warn!(
                                 "Can't deserialize message from file '{}'. {}",
@@ -94,8 +91,8 @@ fn spawn_file_notifier(tracked_dir: &Path) -> anyhow::Result<broadcast::Sender<P
     let sender = event_sender.clone();
 
     let (watcher_sender, watcher_receiver) = std::sync::mpsc::channel();
-    let mut watcher = watcher(watcher_sender, Duration::from_secs(1))
-        .map_err(|e| anyhow!("Initializing watcher failed. {}", e))?;
+    let mut watcher =
+        raw_watcher(watcher_sender).map_err(|e| anyhow!("Initializing watcher failed. {}", e))?;
 
     watcher
         .watch(&tracked_dir, RecursiveMode::NonRecursive)
@@ -112,8 +109,12 @@ fn spawn_file_notifier(tracked_dir: &Path) -> anyhow::Result<broadcast::Sender<P
         let _watcher = watcher;
 
         while let Ok(event) = watcher_receiver.recv() {
-            match event {
-                DebouncedEvent::Write(path) => {
+            match event.op {
+                Ok(Op::CLOSE_WRITE) => {
+                    let path = match event.path {
+                        Some(path) => path,
+                        None => continue,
+                    };
                     event_sender.send(path).ok();
                 }
                 _ => (),
