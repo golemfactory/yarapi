@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
+use std::collections::HashSet;
 use std::fmt::Display;
 use ya_client::market::MarketRequestorApi;
 use ya_client::model::market::{
@@ -94,6 +95,35 @@ impl Market {
                 _ => None,
             })
             .collect())
+    }
+
+    pub async fn list_active_agreements<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<String>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        let mut agreements = HashSet::new();
+        self.list_agreement_events(since, app_session_id)
+            .await?
+            .into_iter()
+            .for_each(|event| {
+                match event.event_type {
+                    AgreementEventType::AgreementApprovedEvent => {
+                        agreements.insert(event.agreement_id)
+                    }
+                    AgreementEventType::AgreementTerminatedEvent { .. } => {
+                        agreements.remove(&event.agreement_id)
+                    }
+                    _ => false,
+                };
+                ()
+            });
+
+        Ok(agreements.into_iter().collect())
     }
 
     pub async fn list_agreement_events<Tz>(
