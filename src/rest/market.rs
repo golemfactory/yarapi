@@ -1,13 +1,14 @@
 use anyhow::{anyhow, bail, Context};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures::prelude::*;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
+use std::fmt::Display;
 use ya_client::market::MarketRequestorApi;
-use ya_client::model::market::{AgreementProposal, RequestorEvent};
+use ya_client::model::market::{AgreementOperationEvent, AgreementProposal, RequestorEvent};
 use ya_client::model::market::{NewDemand, Reason};
 use ya_client::model::NodeId;
 use ya_client::web::WebClient;
@@ -28,7 +29,7 @@ impl AsRef<str> for SubscriptionId {
 }
 
 pub struct Market {
-    api: MarketRequestorApi,
+    pub api: MarketRequestorApi,
     drop_list: DropList,
 }
 
@@ -69,6 +70,64 @@ impl Market {
 
     pub fn subscriptions(&self) -> impl Stream<Item = anyhow::Result<Subscription>> {
         stream::empty()
+    }
+
+    /// Lists all Agreements for identity, that is currently used.
+    /// You can filter Agreements using AppSessionId parameter.
+    pub async fn list_agreements<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<String>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        Ok(self
+            .list_agreement_events(since, app_session_id)
+            .await?
+            .into_iter()
+            .filter_map(|event| match event {
+                AgreementOperationEvent::AgreementApprovedEvent { agreement_id, .. } => {
+                    Some(agreement_id)
+                }
+                _ => None,
+            })
+            .collect())
+    }
+
+    pub async fn list_agreement_events<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<AgreementOperationEvent>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        let mut since = since.with_timezone(&Utc);
+        let mut events = vec![];
+
+        loop {
+            let new_events = self
+                .api
+                .collect_agreement_events(Some(0.0), Some(&since), Some(30), app_session_id.clone())
+                .await?;
+
+            if new_events.is_empty() {
+                return Ok(events);
+            }
+
+            match new_events.last().unwrap() {
+                AgreementOperationEvent::AgreementTerminatedEvent { event_date, .. }
+                | AgreementOperationEvent::AgreementApprovedEvent { event_date, .. }
+                | AgreementOperationEvent::AgreementCancelledEvent { event_date, .. }
+                | AgreementOperationEvent::AgreementRejectedEvent { event_date, .. } => {
+                    since = event_date.clone();
+                }
+            };
+            events.extend(new_events);
+        }
     }
 }
 
