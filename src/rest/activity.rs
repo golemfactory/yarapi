@@ -10,7 +10,7 @@ use ya_client::activity::ActivityRequestorApi;
 pub use ya_client::activity::SecureActivityRequestorApi;
 pub use ya_client::model::activity::Credentials;
 pub use ya_client::model::activity::ExeScriptCommand;
-use ya_client::model::activity::ExeScriptRequest;
+use ya_client::model::activity::{ActivityState, ExeScriptCommandState, ExeScriptRequest};
 use ya_client::model::activity::{CommandResult, ExeScriptCommandResult};
 
 #[derive(Debug)]
@@ -72,6 +72,17 @@ impl DefaultActivity {
         })
     }
 
+    pub(crate) fn attach_to_activity(
+        api: ActivityRequestorApi,
+        activity_id: &str,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            api,
+            activity_id: activity_id.to_string(),
+            drop_list: None,
+        })
+    }
+
     pub async fn execute_commands(
         &self,
         commands: Vec<ExeScriptCommand>,
@@ -94,6 +105,51 @@ impl DefaultActivity {
             })
             .try_collect()
             .await
+    }
+
+    pub async fn get_state(&self) -> anyhow::Result<ActivityState> {
+        Ok(self
+            .api
+            .state()
+            .get_state(&self.activity_id)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to get state for activity [{}]. {}",
+                    &self.activity_id,
+                    e
+                )
+            })?)
+    }
+
+    pub async fn get_running_command(&self) -> anyhow::Result<ExeScriptCommandState> {
+        Ok(self
+            .api
+            .state()
+            .get_running_command(&self.activity_id)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to get running command for activity [{}]. {}",
+                    &self.activity_id,
+                    e
+                )
+            })?)
+    }
+
+    pub async fn get_usage(&self) -> anyhow::Result<Vec<f64>> {
+        Ok(self
+            .api
+            .state()
+            .get_usage(&self.activity_id)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to get usage for activity [{}]. {}",
+                    &self.activity_id,
+                    e
+                )
+            })?)
     }
 }
 

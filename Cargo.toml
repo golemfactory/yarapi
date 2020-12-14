@@ -47,5 +47,5 @@ no-dev-version = true
 enable-all-features = true
 
 
-#[patch.crates-io]
-#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f", features = ["sgx"] }
+[patch.crates-io]
+#ya-client = { path = "../ya-client", features = ["sgx"] }

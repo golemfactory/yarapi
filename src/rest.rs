@@ -36,6 +36,15 @@ impl Session {
         .await
     }
 
+    /// Creates Activity object for existing Activity. Created object
+    /// isn't owner of Activity and won't destroy it on Drop. Use for Debugging.
+    pub async fn attach_to_activity(
+        &self,
+        activity_id: &str,
+    ) -> anyhow::Result<activity::DefaultActivity> {
+        activity::DefaultActivity::attach_to_activity(self.client.interface()?, activity_id)
+    }
+
     pub async fn create_secure_activity(
         &self,
         agreement: &market::Agreement,
