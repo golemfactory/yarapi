@@ -2556,7 +2556,7 @@ dependencies = [
 [[package]]
 name = "ya-agreement-utils"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/yagna.git?rev=a556eebdf10396124b3cf43b719e7ca9ea85e984#a556eebdf10396124b3cf43b719e7ca9ea85e984"
+source = "git+https://github.com/golemfactory/yagna.git?rev=6edcdf2173699cfdd445180ff368efadfce7293f#6edcdf2173699cfdd445180ff368efadfce7293f"
 dependencies = [
  "serde",
  "serde_json",
@@ -2568,7 +2568,7 @@ dependencies = [
 [[package]]
 name = "ya-client"
 version = "0.4.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f#50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=e68bbd90c903c6f74f77fddb80a432d20e4e2b2a#e68bbd90c903c6f74f77fddb80a432d20e4e2b2a"
 dependencies = [
  "awc",
  "bytes 0.5.6",
@@ -2589,7 +2589,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "url",
- "ya-client-model 0.2.0 (git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f)",
+ "ya-client-model 0.2.0 (git+https://github.com/golemfactory/ya-client.git?rev=e68bbd90c903c6f74f77fddb80a432d20e4e2b2a)",
 ]
 
 [[package]]
@@ -2622,10 +2622,11 @@ dependencies = [
 [[package]]
 name = "ya-client-model"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f#50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=e68bbd90c903c6f74f77fddb80a432d20e4e2b2a#e68bbd90c903c6f74f77fddb80a432d20e4e2b2a"
 dependencies = [
  "bigdecimal",
  "chrono",
+ "derive_more",
  "hex",
  "openssl",
  "rand 0.7.3",

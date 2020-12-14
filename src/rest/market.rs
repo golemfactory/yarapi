@@ -8,7 +8,9 @@ use tokio::sync::mpsc;
 use crate::rest::async_drop::{CancelableDropList, DropList};
 use std::fmt::Display;
 use ya_client::market::MarketRequestorApi;
-use ya_client::model::market::{AgreementOperationEvent, AgreementProposal, RequestorEvent};
+use ya_client::model::market::{
+    AgreementEventType, AgreementOperationEvent, AgreementProposal, RequestorEvent,
+};
 use ya_client::model::market::{NewDemand, Reason};
 use ya_client::model::NodeId;
 use ya_client::web::WebClient;
@@ -87,10 +89,8 @@ impl Market {
             .list_agreement_events(since, app_session_id)
             .await?
             .into_iter()
-            .filter_map(|event| match event {
-                AgreementOperationEvent::AgreementApprovedEvent { agreement_id, .. } => {
-                    Some(agreement_id)
-                }
+            .filter_map(|event| match event.event_type {
+                AgreementEventType::AgreementApprovedEvent => Some(event.agreement_id),
                 _ => None,
             })
             .collect())
@@ -118,14 +118,7 @@ impl Market {
                 return Ok(events);
             }
 
-            match new_events.last().unwrap() {
-                AgreementOperationEvent::AgreementTerminatedEvent { event_date, .. }
-                | AgreementOperationEvent::AgreementApprovedEvent { event_date, .. }
-                | AgreementOperationEvent::AgreementCancelledEvent { event_date, .. }
-                | AgreementOperationEvent::AgreementRejectedEvent { event_date, .. } => {
-                    since = event_date.clone();
-                }
-            };
+            since = new_events.last().unwrap().event_date;
             events.extend(new_events);
         }
     }
@@ -355,7 +348,7 @@ impl Proposal {
             .reject_proposal_with_reason(
                 self.subscription.id.as_ref(),
                 self.proposal_id.as_str(),
-                Option::<Reason>::None,
+                &Option::<Reason>::None,
             )
             .await?;
         Ok(())
@@ -400,7 +393,7 @@ impl Drop for AgreementInner {
         let api = self.api.clone();
         let agreement_id = self.agreement_id.clone();
         self.drop_list.async_drop(async move {
-            api.terminate_agreement(&agreement_id, Option::<Reason>::None)
+            api.terminate_agreement(&agreement_id, &Option::<Reason>::None)
                 .await
                 .with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
             log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);

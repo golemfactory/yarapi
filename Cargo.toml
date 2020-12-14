@@ -12,9 +12,9 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f", features = ["sgx"] }
+ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "e68bbd90c903c6f74f77fddb80a432d20e4e2b2a", features = ["sgx"] }
 gftp = "0.1.2"
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "a556eebdf10396124b3cf43b719e7ca9ea85e984" }
+ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "6edcdf2173699cfdd445180ff368efadfce7293f" }
 
 actix = "0.9"
 actix-rt = "1.0"
