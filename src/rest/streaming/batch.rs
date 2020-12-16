@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use futures::prelude::*;
 use futures::FutureExt;
+use std::io::Write;
 use std::sync::Arc;
 
 use crate::rest::activity::{DefaultActivity, DefaultBatch};
@@ -70,6 +71,21 @@ impl StreamingBatch {
                 }
             }
         }
+    }
+
+    pub fn debug(self, filename: &str) -> anyhow::Result<Self> {
+        let debug_content = format!(
+            "ACTIVITY_ID={}\n\
+             BATCH_ID={}\n",
+            &self.activity_id, &self.batch_id
+        );
+
+        std::fs::File::create(filename)
+            .map_err(|e| anyhow!("Failed to create debug file {}. {}", filename, e))?
+            .write_all(debug_content.as_bytes())
+            .map_err(|e| anyhow!("Failed to write to debug file {}. {}", filename, e))?;
+
+        Ok(self)
     }
 }
 
