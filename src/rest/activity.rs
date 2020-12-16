@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result};
-
-use crate::rest::async_drop::{CancelableDropList, DropList};
 use futures::future::LocalBoxFuture;
 use futures::prelude::*;
 use futures::stream::LocalBoxStream;
 use futures::{FutureExt, StreamExt};
 use std::sync::Arc;
+
+use crate::rest::async_drop::{CancelableDropList, DropList};
 use ya_client::activity::ActivityRequestorApi;
 pub use ya_client::activity::SecureActivityRequestorApi;
 pub use ya_client::model::activity::Credentials;
@@ -72,6 +72,7 @@ impl DefaultActivity {
         })
     }
 
+    /// Debug function, that allows to attach to existing Activity.
     pub(crate) fn attach_to_activity(
         api: ActivityRequestorApi,
         activity_id: &str,
@@ -81,6 +82,16 @@ impl DefaultActivity {
             activity_id: activity_id.to_string(),
             drop_list: None,
         })
+    }
+
+    /// Debug function to attach to existing batch.
+    pub fn attach_to_batch(&self, batch_id: &str) -> DefaultBatch {
+        DefaultBatch {
+            batch_id: batch_id.to_string(),
+            commands: Arc::from(vec![]),
+            api: self.api.clone(),
+            activity_id: self.activity_id.clone(),
+        }
     }
 
     pub async fn execute_commands(

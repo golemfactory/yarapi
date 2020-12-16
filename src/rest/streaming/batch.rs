@@ -3,7 +3,7 @@ use futures::prelude::*;
 use futures::FutureExt;
 use std::sync::Arc;
 
-use crate::rest::activity::DefaultActivity;
+use crate::rest::activity::{DefaultActivity, DefaultBatch};
 use crate::rest::{Activity, RunningBatch};
 
 use ya_client::activity::ActivityRequestorApi;
@@ -79,15 +79,7 @@ impl StreamingActivity for DefaultActivity {
         commands: Vec<ExeScriptCommand>,
     ) -> future::LocalBoxFuture<'static, Result<StreamingBatch>> {
         let batch_fut = self.exec(commands);
-        async move {
-            batch_fut.await.map(|batch| StreamingBatch {
-                batch_id: batch.id().to_string(),
-                commands: Arc::from(batch.commands()),
-                api: batch.api,
-                activity_id: batch.activity_id,
-            })
-        }
-        .boxed_local()
+        async move { batch_fut.await.map(|batch| StreamingBatch::from(batch)) }.boxed_local()
     }
 
     fn run_streaming(
@@ -110,5 +102,16 @@ impl StreamingActivity for DefaultActivity {
         }];
 
         self.exec_streaming(commands)
+    }
+}
+
+impl From<DefaultBatch> for StreamingBatch {
+    fn from(batch: DefaultBatch) -> Self {
+        StreamingBatch {
+            batch_id: batch.id().to_string(),
+            commands: Arc::from(batch.commands()),
+            api: batch.api,
+            activity_id: batch.activity_id,
+        }
     }
 }
