@@ -1,6 +1,7 @@
 pub mod activity;
 mod async_drop;
 mod market;
+mod sgx;
 pub mod streaming;
 
 pub use activity::{Activity, Credentials, Event as BatchEvent, ExeScriptCommand, RunningBatch};
