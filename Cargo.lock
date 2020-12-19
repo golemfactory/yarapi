@@ -2712,6 +2712,8 @@ dependencies = [
  "serde_json",
  "sha3 0.9.1",
  "structopt",
+ "tempfile",
+ "thiserror",
  "tokio",
  "url",
  "ya-agreement-utils",

@@ -3,8 +3,12 @@ mod async_drop;
 mod market;
 mod sgx;
 pub mod streaming;
+mod transfer;
 
 pub use activity::{Activity, Credentials, Event as BatchEvent, ExeScriptCommand, RunningBatch};
+pub use transfer::{
+    FileTransferError, JsonTransferError, TransferCmdError, TransferInternalError, Transfers,
+};
 pub use ya_client::web::{WebClient, WebClientBuilder};
 
 use futures::prelude::*;
