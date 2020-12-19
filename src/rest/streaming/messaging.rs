@@ -148,7 +148,7 @@ impl<ActivityImpl: Transfers> MessagingRequestor<ActivityImpl> {
         }
     }
 
-    pub async fn send(self, msg: &impl ExeUnitMessage) -> anyhow::Result<()> {
+    pub async fn send(&self, msg: &impl ExeUnitMessage) -> anyhow::Result<()> {
         let filename = format!("msg-{}", self.msg_counter.fetch_add(1, Ordering::SeqCst));
         let path = self.tracked_dir.join(filename);
 
