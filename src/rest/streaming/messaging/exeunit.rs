@@ -111,6 +111,7 @@ fn spawn_file_notifier(tracked_dir: &Path) -> anyhow::Result<broadcast::Sender<P
         let _watcher = watcher;
 
         while let Ok(event) = watcher_receiver.recv() {
+            log::debug!("watcher event: {:?}", event);
             match event.op {
                 Ok(Op::CLOSE_WRITE) => {
                     let path = match event.path {
