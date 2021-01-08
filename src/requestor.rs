@@ -31,7 +31,7 @@ use ya_client::{
             AgreementProposal, NewDemand, RequestorEvent,
         },
     },
-    payment::PaymentRequestorApi,
+    payment::PaymentApi,
     web::WebClient,
 };
 
@@ -167,7 +167,7 @@ impl Requestor {
         let client = WebClient::builder().auth_token(&app_key).build();
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
-        let payment_api: PaymentRequestorApi = client.interface()?;
+        let payment_api: PaymentApi = client.interface()?;
 
         let demand = self.create_demand().await?;
         log::debug!("demand: {}", serde_json::to_string_pretty(&demand)?);
@@ -411,14 +411,8 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
     let _ = market_api.confirm_agreement(&id, None).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&id, Some(10.0)).await?;
-    match response.trim().to_lowercase().as_str() {
-        "approved" => Ok(agreement_id),
-        res => Err(anyhow::anyhow!(
-            "expected agreement approval, got {} instead",
-            res
-        )),
-    }
+    market_api.wait_for_approval(&id, Some(10.0)).await?;
+    Ok(agreement_id)
 }
 
 async fn monitor_activity(

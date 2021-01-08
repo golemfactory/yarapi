@@ -168,10 +168,10 @@ impl Proposal {
         let _ = self
             .subscription
             .api
-            .reject_proposal_with_reason(
+            .reject_proposal(
                 self.subscription.id.as_ref(),
                 self.proposal_id.as_str(),
-                Option::<Reason>::None,
+                &Option::<Reason>::None,
             )
             .await?;
         Ok(())
@@ -216,7 +216,7 @@ impl Drop for AgreementInner {
         let api = self.api.clone();
         let agreement_id = self.agreement_id.clone();
         self.drop_list.async_drop(async move {
-            api.terminate_agreement(&agreement_id, Option::<Reason>::None)
+            api.terminate_agreement(&agreement_id, &Option::<Reason>::None)
                 .await
                 .with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
             log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);

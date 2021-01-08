@@ -1993,6 +1993,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "strum"
+version = "0.19.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b89a286a7e3b5720b9a477b23253bc50debac207c8d21505f8e70b36792f11b5"
+
+[[package]]
+name = "strum_macros"
+version = "0.19.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e61bb0be289045cb80bfce000512e32d09f8337e54c186725da381377ad1f8d5"
+dependencies = [
+ "heck",
+ "proc-macro2 1.0.24",
+ "quote 1.0.7",
+ "syn 1.0.48",
+]
+
+[[package]]
 name = "syn"
 version = "0.15.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2416,7 +2434,7 @@ dependencies = [
 [[package]]
 name = "ya-client"
 version = "0.4.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=cf9838499aaeb2a54c4ad56d1601c4579a66e7cc#cf9838499aaeb2a54c4ad56d1601c4579a66e7cc"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=29f9b7a60044d56c6665b5d236696bf1830aacdd#29f9b7a60044d56c6665b5d236696bf1830aacdd"
 dependencies = [
  "awc",
  "bytes 0.5.6",
@@ -2456,16 +2474,19 @@ dependencies = [
 [[package]]
 name = "ya-client-model"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=cf9838499aaeb2a54c4ad56d1601c4579a66e7cc#cf9838499aaeb2a54c4ad56d1601c4579a66e7cc"
+source = "git+https://github.com/golemfactory/ya-client.git?rev=29f9b7a60044d56c6665b5d236696bf1830aacdd#29f9b7a60044d56c6665b5d236696bf1830aacdd"
 dependencies = [
  "bigdecimal",
  "chrono",
+ "derive_more",
  "hex",
  "openssl",
  "rand 0.7.3",
  "secp256k1",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "thiserror",
 ]
 
