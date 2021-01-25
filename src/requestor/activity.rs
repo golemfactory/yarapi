@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::requestor::command::{CommandList, ExeScript};
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
 use ya_client::model::activity::{ActivityState, ExeScriptCommandResult};
 
@@ -100,6 +100,12 @@ impl Activity {
     }
 
     pub async fn get_usage(&self) -> Result<Vec<f64>> {
-        Ok(self.api.state().get_usage(&self.activity_id).await?)
+        Ok(self
+            .api
+            .state()
+            .get_usage(&self.activity_id)
+            .await?
+            .current_usage
+            .ok_or(anyhow!("None usage vector"))?)
     }
 }

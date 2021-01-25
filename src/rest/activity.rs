@@ -9,7 +9,9 @@ use ya_client::activity::ActivityRequestorApi;
 pub use ya_client::activity::SecureActivityRequestorApi;
 pub use ya_client::model::activity::Credentials;
 pub use ya_client::model::activity::ExeScriptCommand;
-use ya_client::model::activity::{ActivityState, ExeScriptCommandState, ExeScriptRequest};
+use ya_client::model::activity::{
+    ActivityState, ActivityUsage, ExeScriptCommandState, ExeScriptRequest,
+};
 use ya_client::model::activity::{CommandResult, ExeScriptCommandResult};
 
 pub use super::sgx::{SgxActivity, SgxBatch};
@@ -149,7 +151,7 @@ impl DefaultActivity {
             })?)
     }
 
-    pub async fn get_usage(&self) -> anyhow::Result<Vec<f64>> {
+    pub async fn get_usage(&self) -> anyhow::Result<ActivityUsage> {
         Ok(self
             .api
             .state()

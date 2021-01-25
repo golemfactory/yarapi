@@ -12,29 +12,29 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "e68bbd90c903c6f74f77fddb80a432d20e4e2b2a", features = ["sgx"] }
+ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "a5bfc61da8f3a5cdcafcacf3d48a9f706571a9d7", features = ["sgx"] }
 gftp = "0.1.2"
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "6edcdf2173699cfdd445180ff368efadfce7293f" }
+ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "552859220b764b39984580aacf0a81475b75da2e" }
 
 actix = "0.9"
 actix-rt = "1.0"
-anyhow = "1.0.28"
+anyhow = "^1.0"
 bigdecimal = "0.1.0"
 chrono = { version = "0.4.10", features = ["clock"] }
-dotenv = "0.15.0"
-env_logger = "0.6"
-futures = "0.3"
+dotenv = "^0.15.0"
+env_logger = "^0.6"
+futures = "^0.3"
 futures-core = "0.3.8"
 futures-util = "0.3.7"
-log = "0.4"
+log = "^0.4"
 pin-project = "1.0.2"
 secp256k1 = "0.17"
-semver = "0.10.0"
-serde = "1.0.118"
-serde_json = "1.0"
+semver = "^0.10.0"
+serde = "^1.0"
+serde_json = "^1.0"
 sha3 = "0.9.1"
-tempfile = "3.1.0"
-thiserror = "1.0.22"
+tempfile = "^3.1.0"
+thiserror = "^1.0"
 tokio = { version = "0.2.10", features = ["fs"] }
 url = "2.1.1"
 
@@ -49,5 +49,5 @@ no-dev-version = true
 enable-all-features = true
 
 
-[patch.crates-io]
-#ya-client = { path = "../ya-client", features = ["sgx"] }
+#[patch.crates-io]
+#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "0efbf2f875d804a283d162fc9e1679516be08900"}

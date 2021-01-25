@@ -375,7 +375,7 @@ impl Proposal {
         let _ = self
             .subscription
             .api
-            .reject_proposal_with_reason(
+            .reject_proposal(
                 self.subscription.id.as_ref(),
                 self.proposal_id.as_str(),
                 &Option::<Reason>::None,
