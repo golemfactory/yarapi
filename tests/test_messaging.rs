@@ -34,7 +34,7 @@ async fn test_messaging_to_exeunit() -> anyhow::Result<()> {
 
     emulate_send(Messages::Progress(0.02), &dir, 1).unwrap();
 
-    let msg = tokio::time::timeout(Duration::from_millis(150), events.recv())
+    let msg = tokio::time::timeout(Duration::from_millis(500), events.recv())
         .await?
         .unwrap();
     match msg {
@@ -44,7 +44,7 @@ async fn test_messaging_to_exeunit() -> anyhow::Result<()> {
 
     emulate_send(Messages::Progress(0.06), &dir, 2).unwrap();
 
-    let msg = tokio::time::timeout(Duration::from_millis(150), events.recv())
+    let msg = tokio::time::timeout(Duration::from_millis(500), events.recv())
         .await?
         .unwrap();
     match msg {
