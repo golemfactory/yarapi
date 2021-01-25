@@ -9,4 +9,4 @@ pub use result_stream::ResultStream;
 
 pub use ya_client::model::activity::{CommandOutput, RuntimeEvent, RuntimeEventKind};
 
-pub use messaging::{send_to_guest, ExeUnitMessage, MessagingExeUnit, MessagingRequestor};
+pub use messaging::{send_to_guest, ExeUnitMessage};
