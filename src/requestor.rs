@@ -28,10 +28,10 @@ use ya_client::{
         activity::CommandResult,
         market::{
             proposal::{Proposal, State},
-            AgreementProposal, Demand, RequestorEvent,
+            AgreementProposal, NewDemand, RequestorEvent,
         },
     },
-    payment::PaymentRequestorApi,
+    payment::PaymentApi,
     web::WebClient,
 };
 
@@ -167,7 +167,7 @@ impl Requestor {
         let client = WebClient::builder().auth_token(&app_key).build();
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
-        let payment_api: PaymentRequestorApi = client.interface()?;
+        let payment_api: PaymentApi = client.interface()?;
 
         let demand = self.create_demand().await?;
         log::debug!("demand: {}", serde_json::to_string_pretty(&demand)?);
@@ -294,7 +294,7 @@ impl Requestor {
         Ok(())
     }
 
-    async fn create_demand(&self) -> Result<Demand> {
+    async fn create_demand(&self) -> Result<NewDemand> {
         // "golem.node.debug.subnet" == "mysubnet", TODO
         let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
@@ -307,7 +307,7 @@ impl Requestor {
         log::debug!("srv.comp.task_package: {}", url_with_hash);
 
         let deadline = chrono::Utc::now() + chrono::Duration::from_std(self.timeout.clone())?;
-        let demand = Demand::new(
+        let demand = NewDemand::new(
             serde_json::json!({
                 "golem.node.id.name": self.name,
                 "golem.node.debug.subnet": self.subnet.clone(),
@@ -325,7 +325,7 @@ async fn process_market_events(
     requestor: Addr<Requestor>,
     market_api: MarketRequestorApi,
     subscription_id: String,
-    demand: Demand,
+    demand: NewDemand,
     mut tx: mpsc::Sender<Proposal>,
 ) {
     log::info!("processing market events");
@@ -352,22 +352,21 @@ async fn process_market_events(
                 RequestorEvent::ProposalEvent {
                     event_date: _,
                     proposal,
-                } => match proposal.state.as_ref().unwrap_or(&State::Initial) {
+                } => match proposal.state {
                     State::Initial => {
                         log::debug!("answering with counter proposal");
-                        let bespoke_proposal = match proposal.counter_demand(demand.clone()) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                log::error!("counter demand error {}", e);
-                                continue;
-                            }
-                        };
 
                         let market_api_clone = market_api.clone();
                         let subscription_id_clone = subscription_id.clone();
+                        let counter_proposal = demand.clone();
+
                         Arbiter::spawn(async move {
                             if let Err(e) = market_api_clone
-                                .counter_proposal(&bespoke_proposal, &subscription_id_clone)
+                                .counter_proposal(
+                                    &counter_proposal,
+                                    &subscription_id_clone,
+                                    &proposal.proposal_id,
+                                )
                                 .await
                             {
                                 log::error!("unable to counter proposal: {}", e);
@@ -397,7 +396,7 @@ async fn process_market_events(
 }
 
 async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) -> Result<String> {
-    let id = proposal.proposal_id()?;
+    let id = proposal.proposal_id;
     let agreement = AgreementProposal::new(
         id.clone(),
         chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
@@ -407,19 +406,13 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
     log::info!(
         "created agreement [{}] with [{:?}]; confirming",
         agreement_id,
-        proposal.issuer_id()
+        &proposal.issuer_id
     );
-    let _ = market_api.confirm_agreement(&id).await?;
+    let _ = market_api.confirm_agreement(&id, None).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&id, Some(10.0)).await?;
-    match response.trim().to_lowercase().as_str() {
-        "approved" => Ok(agreement_id),
-        res => Err(anyhow::anyhow!(
-            "expected agreement approval, got {} instead",
-            res
-        )),
-    }
+    market_api.wait_for_approval(&id, Some(10.0)).await?;
+    Ok(agreement_id)
 }
 
 async fn monitor_activity(
