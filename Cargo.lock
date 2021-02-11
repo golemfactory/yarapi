@@ -1891,6 +1891,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_qs"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5cb0f0564a84554436c4ceff5c896308d4e09d0eb4bd0215b8f698f88084601"
+dependencies = [
+ "percent-encoding",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "serde_urlencoded"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2003,6 +2014,24 @@ checksum = "65e51c492f9e23a220534971ff5afc14037289de430e3c83f9daf6a1b6ae91e8"
 dependencies = [
  "heck",
  "proc-macro-error",
+ "proc-macro2 1.0.24",
+ "quote 1.0.7",
+ "syn 1.0.52",
+]
+
+[[package]]
+name = "strum"
+version = "0.19.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b89a286a7e3b5720b9a477b23253bc50debac207c8d21505f8e70b36792f11b5"
+
+[[package]]
+name = "strum_macros"
+version = "0.19.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e61bb0be289045cb80bfce000512e32d09f8337e54c186725da381377ad1f8d5"
+dependencies = [
+ "heck",
  "proc-macro2 1.0.24",
  "quote 1.0.7",
  "syn 1.0.52",
@@ -2441,19 +2470,19 @@ dependencies = [
 [[package]]
 name = "ya-agreement-utils"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/yagna.git?rev=a556eebdf10396124b3cf43b719e7ca9ea85e984#a556eebdf10396124b3cf43b719e7ca9ea85e984"
+source = "git+https://github.com/golemfactory/yagna.git?branch=release/v0.6.0#483c832f21593c5882075dfd4682bf2b0b7ac2a2"
 dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
  "thiserror",
- "ya-client-model 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ya-client-model 0.2.0",
 ]
 
 [[package]]
 name = "ya-client"
-version = "0.4.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f#50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f"
+version = "0.5.0"
+source = "git+https://github.com/golemfactory/ya-client.git?branch=release/v0.5#62e4757d5e1748e6606c3d7992a1a7956e52d8b8"
 dependencies = [
  "awc",
  "bytes 0.5.6",
@@ -2472,9 +2501,10 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "serde_qs",
  "thiserror",
  "url",
- "ya-client-model 0.2.0 (git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f)",
+ "ya-client-model 0.3.0",
 ]
 
 [[package]]
@@ -2506,17 +2536,20 @@ dependencies = [
 
 [[package]]
 name = "ya-client-model"
-version = "0.2.0"
-source = "git+https://github.com/golemfactory/ya-client.git?rev=50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f#50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f"
+version = "0.3.0"
+source = "git+https://github.com/golemfactory/ya-client.git?branch=release/v0.5#62e4757d5e1748e6606c3d7992a1a7956e52d8b8"
 dependencies = [
  "bigdecimal",
  "chrono",
+ "derive_more",
  "hex",
  "openssl",
  "rand 0.7.3",
  "secp256k1",
  "serde",
  "serde_json",
+ "strum",
+ "strum_macros",
  "thiserror",
 ]
 

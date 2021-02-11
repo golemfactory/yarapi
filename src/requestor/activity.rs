@@ -3,7 +3,7 @@
 use crate::requestor::command::{CommandList, ExeScript};
 use anyhow::{Context, Result};
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
-use ya_client::model::activity::{ActivityState, ExeScriptCommandResult};
+use ya_client::model::activity::{ActivityState, ExeScriptCommandResult, ActivityUsage};
 
 #[derive(Clone)]
 enum ActivityKind {
@@ -99,7 +99,7 @@ impl Activity {
         Ok(self.api.state().get_state(&self.activity_id).await?)
     }
 
-    pub async fn get_usage(&self) -> Result<Vec<f64>> {
+    pub async fn get_usage(&self) -> Result<ActivityUsage> {
         Ok(self.api.state().get_usage(&self.activity_id).await?)
     }
 }
