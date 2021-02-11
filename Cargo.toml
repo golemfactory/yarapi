@@ -12,9 +12,9 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f", features = ["sgx"] }
+ya-client = { version = "0.4", features = ["sgx"] }
 gftp = "0.1.2"
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "a556eebdf10396124b3cf43b719e7ca9ea85e984" }
+ya-agreement-utils = "0.2"
 
 actix = "0.9"
 actix-rt = "1.0"
@@ -44,6 +44,8 @@ tokio = { version = "0.2.10", features = ["macros"] }
 no-dev-version = true
 enable-all-features = true
 
-
-#[patch.crates-io]
-#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f", features = ["sgx"] }
+[patch.crates-io]
+ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "50c530fb54fbb91a9ad743f43f2c6e0b3fc3b34f"}
+ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "a556eebdf10396124b3cf43b719e7ca9ea85e984"}
+#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "4099adb99dadbc8929caba33538806f5e10d5920"}
+#ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
