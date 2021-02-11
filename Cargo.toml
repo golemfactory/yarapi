@@ -46,5 +46,6 @@ enable-all-features = true
 
 [patch.crates-io]
 ya-client = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
+ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
 #ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
 ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}

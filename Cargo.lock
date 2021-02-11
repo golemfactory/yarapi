@@ -2470,13 +2470,13 @@ dependencies = [
 [[package]]
 name = "ya-agreement-utils"
 version = "0.2.0"
-source = "git+https://github.com/golemfactory/yagna.git?branch=release/v0.6.0#483c832f21593c5882075dfd4682bf2b0b7ac2a2"
+source = "git+https://github.com/golemfactory/yagna.git?branch=2rec/bump-crates-ver#483f945b49e9d91c535eaa985b7557950854990a"
 dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
  "thiserror",
- "ya-client-model 0.2.0",
+ "ya-client-model 0.3.0",
 ]
 
 [[package]]
@@ -2515,20 +2515,6 @@ checksum = "5b325b7e2de2ad52bc85bce0f1fb491023cf7e41991202597c09854371df99f3"
 dependencies = [
  "bigdecimal",
  "chrono",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "ya-client-model"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7b5a9fc91eaff99c4f199d5bfae24d9bec8cc34a18f3a4bf8eb575ab44f77e"
-dependencies = [
- "bigdecimal",
- "chrono",
- "rand 0.7.3",
  "serde",
  "serde_json",
  "thiserror",
