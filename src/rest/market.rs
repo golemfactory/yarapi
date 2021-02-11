@@ -7,8 +7,8 @@ use tokio::sync::mpsc;
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
 use ya_client::market::MarketRequestorApi;
-use ya_client::model::market::{AgreementProposal, RequestorEvent};
 use ya_client::model::market::NewDemand;
+use ya_client::model::market::{AgreementProposal, RequestorEvent};
 use ya_client::model::NodeId;
 use ya_client::web::WebClient;
 

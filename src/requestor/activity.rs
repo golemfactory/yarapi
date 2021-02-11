@@ -3,7 +3,7 @@
 use crate::requestor::command::{CommandList, ExeScript};
 use anyhow::{Context, Result};
 use ya_client::activity::{ActivityRequestorApi, SecureActivityRequestorApi};
-use ya_client::model::activity::{ActivityState, ExeScriptCommandResult, ActivityUsage};
+use ya_client::model::activity::{ActivityState, ActivityUsage, ExeScriptCommandResult};
 
 #[derive(Clone)]
 enum ActivityKind {
