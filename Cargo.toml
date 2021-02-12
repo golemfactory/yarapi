@@ -13,7 +13,7 @@ keywords=["golem", "yagna"]
 
 [dependencies]
 ya-client = { version = "0.5", features = ["sgx"] }
-gftp = "0.1.2"
+gftp = "0.2"
 ya-agreement-utils = "0.2"
 
 actix = "0.9"
@@ -49,3 +49,10 @@ ya-client = { git = "https://github.com/golemfactory/ya-client.git", branch = "r
 ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
 #ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
 ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
+gftp = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
+ya-compile-time-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
+ya-core-model = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
+ya-service-bus = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+ya-sb-proto = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#ya-sb-router = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+ya-sb-util = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
