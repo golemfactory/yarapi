@@ -172,7 +172,9 @@ impl Requestor {
         let accounts = payment_api.get_requestor_accounts().await?;
 
         if accounts.is_empty() {
-            anyhow::bail!("No Requestor accounts initialized. Please run `yagna payment init --sender`.")
+            anyhow::bail!(
+                "No Requestor accounts initialized. Please run `yagna payment init --sender`."
+            )
         }
 
         let demand = self.create_demand(&accounts[0]).await?;
@@ -417,10 +419,13 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
         agreement_id,
         &proposal.issuer_id
     );
-    let _ = market_api.confirm_agreement(&id, None).await?;
+    let _ = market_api.confirm_agreement(&agreement_id, None).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    match market_api.wait_for_approval(&id, Some(10.0)).await {
+    match market_api
+        .wait_for_approval(&agreement_id, Some(10.0))
+        .await
+    {
         Ok(()) => Ok(agreement_id),
         Err(e) => Err(anyhow!("Agreement not approved; got: `{}`", e)),
     }

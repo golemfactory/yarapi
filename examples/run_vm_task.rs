@@ -13,6 +13,8 @@ struct Args {
     #[structopt(flatten)]
     package: Location,
     input: PathBuf,
+    #[structopt(long, env, default_value = "community.4")]
+    subnet: String,
 }
 
 #[derive(Debug, Clone, StructOpt)]
@@ -39,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     let package = args.package.clone().into();
 
     Requestor::new("My Requestor", Image::GVMKit((0, 2, 4).into()), package)
-        .with_subnet("community.4")
+        .with_subnet(&args.subnet)
         .with_max_budget_glm(5)
         .with_timeout(Duration::from_secs(12 * 60))
         .with_constraints(constraints![
