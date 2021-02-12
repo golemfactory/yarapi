@@ -104,7 +104,7 @@ impl PaymentManager {
                             if this.valid_agreements.remove(&invoice.agreement_id) {
                                 let invoice_id = invoice.invoice_id;
                                 log::info!(
-                                    "Accepting invoice amounted {} NGNT, issuer: {}",
+                                    "Accepting invoice amounted {} GLM, issuer: {}",
                                     invoice.amount,
                                     invoice.issuer_id
                                 );

@@ -38,9 +38,9 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::from_args();
     let package = args.package.clone().into();
 
-    Requestor::new("My Requestor", Image::GVMKit((0, 1, 0).into()), package)
-        .with_subnet("testnet")
-        .with_max_budget_ngnt(5)
+    Requestor::new("My Requestor", Image::GVMKit((0, 2, 4).into()), package)
+        .with_subnet("community.4")
+        .with_max_budget_glm(5)
         .with_timeout(Duration::from_secs(12 * 60))
         .with_constraints(constraints![
             "golem.inf.mem.gib" > 0.5,

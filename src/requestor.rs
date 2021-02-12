@@ -40,6 +40,7 @@ pub use crate::requestor::{
     command::{Command, CommandList},
     package::{Image, Package},
 };
+use ya_client::model::payment::Account;
 
 const MAX_CONCURRENT_JOBS: usize = 64;
 
@@ -94,7 +95,7 @@ impl Requestor {
     pub fn new(name: impl Into<String>, image_type: Image, task_package: Package) -> Self {
         Self {
             name: name.into(),
-            subnet: "testnet".into(),
+            subnet: "community.4".into(),
             image_type,
             task_package,
             constraints: constraints!["golem.com.pricing.model" == "linear"], /* TODO: other models */
@@ -137,8 +138,8 @@ impl Requestor {
         Self { timeout, ..self }
     }
 
-    /// Sets the max budget in GNT.
-    pub fn with_max_budget_ngnt<T: Into<BigDecimal>>(self, budget: T) -> Self {
+    /// Sets the max budget in GLM.
+    pub fn with_max_budget_glm<T: Into<BigDecimal>>(self, budget: T) -> Self {
         Self {
             budget: budget.into(),
             ..self
@@ -168,8 +169,13 @@ impl Requestor {
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
         let payment_api: PaymentApi = client.interface()?;
+        let accounts = payment_api.get_requestor_accounts().await?;
 
-        let demand = self.create_demand().await?;
+        if accounts.is_empty() {
+            anyhow::bail!("No Requestor accounts initialized. Please run `yagna payment init --sender`.")
+        }
+
+        let demand = self.create_demand(&accounts[0]).await?;
         log::debug!("demand: {}", serde_json::to_string_pretty(&demand)?);
 
         let allocation = payment_api
@@ -181,7 +187,7 @@ impl Requestor {
                 make_deposit: false,
             })
             .await?;
-        log::info!("allocated {} NGNT", &allocation.total_amount);
+        log::info!("allocated {} GLM", &allocation.total_amount);
 
         let subscription_id = market_api.subscribe(&demand).await?;
         log::info!("subscribed to market (id: [{}])", subscription_id);
@@ -294,25 +300,28 @@ impl Requestor {
         Ok(())
     }
 
-    async fn create_demand(&self) -> Result<NewDemand> {
+    async fn create_demand(&self, account: &Account) -> Result<NewDemand> {
         // "golem.node.debug.subnet" == "mysubnet", TODO
         let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
         let constraints = self.constraints.clone().and(constraints![
             "golem.runtime.name" == self.image_type.runtime_name(),
-            "golem.runtime.version" == self.image_type.runtime_version().to_string(),
+            // "golem.runtime.version" == self.image_type.runtime_version().to_string(),
             "golem.node.debug.subnet" == self.subnet.clone(),
         ]);
 
         log::debug!("srv.comp.task_package: {}", url_with_hash);
 
         let deadline = chrono::Utc::now() + chrono::Duration::from_std(self.timeout.clone())?;
+
         let demand = NewDemand::new(
             serde_json::json!({
                 "golem.node.id.name": self.name,
                 "golem.node.debug.subnet": self.subnet.clone(),
                 "golem.srv.comp.task_package": url_with_hash,
                 "golem.srv.comp.expiration": deadline.timestamp_millis(),
+                "golem.com.payment.chosen-platform": account.platform.clone(),
+                format!("golem.com.payment.platform.{}.address", account.platform): account.address.clone(),
             }),
             constraints.to_string(),
         );
