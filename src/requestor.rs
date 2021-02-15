@@ -7,7 +7,7 @@ mod payment_manager;
 mod macros;
 
 use actix::prelude::*;
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use bigdecimal::BigDecimal;
 use futures::channel::mpsc;
 use futures::future::{select, Either};
@@ -28,10 +28,10 @@ use ya_client::{
         activity::CommandResult,
         market::{
             proposal::{Proposal, State},
-            AgreementProposal, Demand, RequestorEvent,
+            AgreementProposal, NewDemand, RequestorEvent,
         },
     },
-    payment::PaymentRequestorApi,
+    payment::PaymentApi,
     web::WebClient,
 };
 
@@ -40,6 +40,7 @@ pub use crate::requestor::{
     command::{Command, CommandList},
     package::{Image, Package},
 };
+use ya_client::model::payment::Account;
 
 const MAX_CONCURRENT_JOBS: usize = 64;
 
@@ -94,7 +95,7 @@ impl Requestor {
     pub fn new(name: impl Into<String>, image_type: Image, task_package: Package) -> Self {
         Self {
             name: name.into(),
-            subnet: "testnet".into(),
+            subnet: "community.4".into(),
             image_type,
             task_package,
             constraints: constraints!["golem.com.pricing.model" == "linear"], /* TODO: other models */
@@ -137,8 +138,8 @@ impl Requestor {
         Self { timeout, ..self }
     }
 
-    /// Sets the max budget in GNT.
-    pub fn with_max_budget_ngnt<T: Into<BigDecimal>>(self, budget: T) -> Self {
+    /// Sets the max budget in GLM.
+    pub fn with_max_budget_glm<T: Into<BigDecimal>>(self, budget: T) -> Self {
         Self {
             budget: budget.into(),
             ..self
@@ -167,9 +168,16 @@ impl Requestor {
         let client = WebClient::builder().auth_token(&app_key).build();
         let market_api: MarketRequestorApi = client.interface()?;
         let activity_api: ActivityRequestorApi = client.interface()?;
-        let payment_api: PaymentRequestorApi = client.interface()?;
+        let payment_api: PaymentApi = client.interface()?;
+        let accounts = payment_api.get_requestor_accounts().await?;
 
-        let demand = self.create_demand().await?;
+        if accounts.is_empty() {
+            anyhow::bail!(
+                "No Requestor accounts initialized. Please run `yagna payment init --sender`."
+            )
+        }
+
+        let demand = self.create_demand(&accounts[0]).await?;
         log::debug!("demand: {}", serde_json::to_string_pretty(&demand)?);
 
         let allocation = payment_api
@@ -181,7 +189,7 @@ impl Requestor {
                 make_deposit: false,
             })
             .await?;
-        log::info!("allocated {} NGNT", &allocation.total_amount);
+        log::info!("allocated {} GLM", &allocation.total_amount);
 
         let subscription_id = market_api.subscribe(&demand).await?;
         log::info!("subscribed to market (id: [{}])", subscription_id);
@@ -294,25 +302,28 @@ impl Requestor {
         Ok(())
     }
 
-    async fn create_demand(&self) -> Result<Demand> {
+    async fn create_demand(&self, account: &Account) -> Result<NewDemand> {
         // "golem.node.debug.subnet" == "mysubnet", TODO
         let (digest, url) = self.task_package.publish().await?;
         let url_with_hash = format!("hash:sha3:{}:{}", digest, url);
         let constraints = self.constraints.clone().and(constraints![
             "golem.runtime.name" == self.image_type.runtime_name(),
-            "golem.runtime.version" == self.image_type.runtime_version().to_string(),
+            // "golem.runtime.version" == self.image_type.runtime_version().to_string(),
             "golem.node.debug.subnet" == self.subnet.clone(),
         ]);
 
         log::debug!("srv.comp.task_package: {}", url_with_hash);
 
         let deadline = chrono::Utc::now() + chrono::Duration::from_std(self.timeout.clone())?;
-        let demand = Demand::new(
+
+        let demand = NewDemand::new(
             serde_json::json!({
                 "golem.node.id.name": self.name,
                 "golem.node.debug.subnet": self.subnet.clone(),
                 "golem.srv.comp.task_package": url_with_hash,
                 "golem.srv.comp.expiration": deadline.timestamp_millis(),
+                "golem.com.payment.chosen-platform": account.platform.clone(),
+                format!("golem.com.payment.platform.{}.address", account.platform): account.address.clone(),
             }),
             constraints.to_string(),
         );
@@ -325,7 +336,7 @@ async fn process_market_events(
     requestor: Addr<Requestor>,
     market_api: MarketRequestorApi,
     subscription_id: String,
-    demand: Demand,
+    demand: NewDemand,
     mut tx: mpsc::Sender<Proposal>,
 ) {
     log::info!("processing market events");
@@ -352,22 +363,21 @@ async fn process_market_events(
                 RequestorEvent::ProposalEvent {
                     event_date: _,
                     proposal,
-                } => match proposal.state.as_ref().unwrap_or(&State::Initial) {
+                } => match proposal.state {
                     State::Initial => {
                         log::debug!("answering with counter proposal");
-                        let bespoke_proposal = match proposal.counter_demand(demand.clone()) {
-                            Ok(c) => c,
-                            Err(e) => {
-                                log::error!("counter demand error {}", e);
-                                continue;
-                            }
-                        };
 
                         let market_api_clone = market_api.clone();
                         let subscription_id_clone = subscription_id.clone();
+                        let counter_proposal = demand.clone();
+
                         Arbiter::spawn(async move {
                             if let Err(e) = market_api_clone
-                                .counter_proposal(&bespoke_proposal, &subscription_id_clone)
+                                .counter_proposal(
+                                    &counter_proposal,
+                                    &subscription_id_clone,
+                                    &proposal.proposal_id,
+                                )
                                 .await
                             {
                                 log::error!("unable to counter proposal: {}", e);
@@ -397,7 +407,7 @@ async fn process_market_events(
 }
 
 async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) -> Result<String> {
-    let id = proposal.proposal_id()?;
+    let id = proposal.proposal_id;
     let agreement = AgreementProposal::new(
         id.clone(),
         chrono::Utc::now() + chrono::Duration::minutes(10), /* TODO */
@@ -407,18 +417,17 @@ async fn create_agreement(market_api: MarketRequestorApi, proposal: Proposal) ->
     log::info!(
         "created agreement [{}] with [{:?}]; confirming",
         agreement_id,
-        proposal.issuer_id()
+        &proposal.issuer_id
     );
-    let _ = market_api.confirm_agreement(&id).await?;
+    let _ = market_api.confirm_agreement(&agreement_id, None).await?;
     log::info!("waiting for approval of agreement [{}]", agreement_id);
 
-    let response = market_api.wait_for_approval(&id, Some(10.0)).await?;
-    match response.trim().to_lowercase().as_str() {
-        "approved" => Ok(agreement_id),
-        res => Err(anyhow::anyhow!(
-            "expected agreement approval, got {} instead",
-            res
-        )),
+    match market_api
+        .wait_for_approval(&agreement_id, Some(10.0))
+        .await
+    {
+        Ok(()) => Ok(agreement_id),
+        Err(e) => Err(anyhow!("Agreement not approved; got: `{}`", e)),
     }
 }
 

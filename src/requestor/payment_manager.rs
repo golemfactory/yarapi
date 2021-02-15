@@ -3,13 +3,12 @@
 use actix::prelude::*;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use futures::TryFutureExt;
 use std::collections::HashSet;
 use std::time::Duration;
-use ya_client::{model, payment::requestor::PaymentRequestorApi};
+use ya_client::{model, payment::PaymentApi};
 
 pub struct PaymentManager {
-    payment_api: PaymentRequestorApi,
+    payment_api: PaymentApi,
     allocation_id: String,
     total_amount: BigDecimal,
     amount_paid: BigDecimal,
@@ -28,7 +27,7 @@ impl Actor for PaymentManager {
 }
 
 impl PaymentManager {
-    pub fn new(payment_api: PaymentRequestorApi, allocation: model::payment::Allocation) -> Self {
+    pub fn new(payment_api: PaymentApi, allocation: model::payment::Allocation) -> Self {
         let now = Utc::now();
         PaymentManager {
             payment_api,
@@ -47,11 +46,11 @@ impl PaymentManager {
 
         let f = async move {
             let events = api
-                .get_debit_note_events(Some(&ts), Some(Duration::from_secs(60)))
+                .get_debit_note_events(Some(&ts), Some(Duration::from_secs(60)), Some(5), None)
                 .await?;
             for event in events {
                 log::debug!("got debit note: {:?}", event);
-                ts = event.timestamp;
+                ts = event.event_date;
             }
             Ok::<_, anyhow::Error>(ts)
         }
@@ -78,16 +77,16 @@ impl PaymentManager {
 
         let f = async move {
             let events = api
-                .get_invoice_events(Some(&ts), Some(Duration::from_secs(60)))
+                .get_invoice_events(Some(&ts), Some(Duration::from_secs(60)), Some(5), None)
                 .await?;
             let mut new_invoices = Vec::new();
             for event in events {
                 log::debug!("Got invoice: {:?}", event);
-                if event.event_type == model::payment::EventType::Received {
+                if event.event_type == model::payment::InvoiceEventType::InvoiceReceivedEvent {
                     let invoice = api.get_invoice(&event.invoice_id).await?;
                     new_invoices.push(invoice);
                 }
-                ts = event.timestamp;
+                ts = event.event_date;
             }
             Ok::<_, anyhow::Error>((ts, new_invoices))
         }
@@ -105,7 +104,7 @@ impl PaymentManager {
                             if this.valid_agreements.remove(&invoice.agreement_id) {
                                 let invoice_id = invoice.invoice_id;
                                 log::info!(
-                                    "Accepting invoice amounted {} NGNT, issuer: {}",
+                                    "Accepting invoice amounted {} GLM, issuer: {}",
                                     invoice.amount,
                                     invoice.issuer_id
                                 );
@@ -200,8 +199,8 @@ impl Handler<ReleaseAllocation> for PaymentManager {
             async move {
                 payment_api
                     .release_allocation(&allocation_id)
-                    .map_err(anyhow::Error::from)
                     .await
+                    .map_err(anyhow::Error::from)
             }
             .into_actor(self),
         )

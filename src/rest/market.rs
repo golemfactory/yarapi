@@ -1,14 +1,15 @@
-use anyhow::Context;
+use anyhow::{anyhow, bail, Context};
 use chrono::{DateTime, Utc};
 use futures::prelude::*;
 use futures::TryStreamExt;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
 use ya_client::market::MarketRequestorApi;
-use ya_client::model::market::proposal::State;
-use ya_client::model::market::Demand;
+use ya_client::model::market::NewDemand;
 use ya_client::model::market::{AgreementProposal, RequestorEvent};
+use ya_client::model::NodeId;
 use ya_client::web::WebClient;
 
 #[derive(Clone)]
@@ -42,8 +43,11 @@ impl Market {
         props: &serde_json::Value,
         constraints: &str,
     ) -> anyhow::Result<Subscription> {
-        let demand = Demand::new(props.clone(), constraints.to_string());
+        let demand = NewDemand::new(props.clone(), constraints.to_string());
+        self.subscribe_demand(demand).await
+    }
 
+    pub async fn subscribe_demand(&self, demand: NewDemand) -> anyhow::Result<Subscription> {
         let subscription_id = self.api.subscribe(&demand).await?;
         Ok(Subscription::new(
             self.api.clone(),
@@ -111,17 +115,13 @@ impl Subscription {
                 let subscription_iter = subscription.clone();
                 Ok::<_, anyhow::Error>(Some((
                     stream::iter(items.into_iter().filter_map(move |event| match event {
-                        RequestorEvent::ProposalEvent { mut proposal, .. } => {
+                        RequestorEvent::ProposalEvent { proposal, .. } => {
                             let subscription = subscription_iter.clone();
-                            if let Some(proposal_id) = proposal.proposal_id.take() {
-                                Some(Ok(Proposal {
-                                    subscription,
-                                    proposal_id,
-                                    data: proposal,
-                                }))
-                            } else {
-                                None
-                            }
+                            Some(Ok(Proposal {
+                                subscription,
+                                proposal_id: proposal.proposal_id.clone(),
+                                data: proposal,
+                            }))
                         }
                         _ => None,
                     })),
@@ -130,6 +130,127 @@ impl Subscription {
             }
         })
         .try_flatten()
+    }
+
+    pub fn collect_proposals(&self) -> mpsc::Receiver<Proposal> {
+        let (sender, receiver) = mpsc::channel(20);
+        tokio::task::spawn_local(proposals_collector(self.inner.clone(), sender));
+        receiver
+    }
+
+    /// TODO: We shouldn't pass Demand here, but we don't store initial Demand in subscription,
+    ///       so we have no choice. Rethink this design.
+    pub fn negotiated_proposals(&self, demand: NewDemand) -> mpsc::Receiver<Proposal> {
+        let (mut sender, receiver) = mpsc::channel(20);
+        let mut proposals = self.collect_proposals();
+
+        tokio::task::spawn_local(async move {
+            while let Some(proposal) = proposals.recv().await {
+                if proposal.is_response() {
+                    if let Err(_) = sender.send(proposal).await {
+                        // Probably no one is listening for these events anymore.
+                        return;
+                    };
+                } else {
+                    proposal
+                        .counter_proposal(&demand.properties, &demand.constraints)
+                        .await
+                        .map_err(|e| log::warn!("Failed to counter Proposal. Error: {}", e))
+                        .ok();
+                }
+            }
+        });
+        receiver
+    }
+
+    pub async fn negotiate_agreements(
+        &self,
+        demand: NewDemand,
+        num_agreements: usize,
+        deadline: DateTime<Utc>,
+    ) -> anyhow::Result<Vec<Agreement>> {
+        let mut agreements = vec![];
+        let mut proposals = self.negotiated_proposals(demand);
+
+        while agreements.len() < num_agreements {
+            if let Some(proposal) = proposals.recv().await {
+                match negotiate_agreement(proposal, deadline).await {
+                    Ok(agreement) => agreements.push(agreement),
+                    Err(e) => log::warn!("Negotiating Agreement failed. {}", e),
+                }
+            }
+        }
+
+        Ok(agreements)
+    }
+}
+
+pub async fn negotiate_agreement(
+    proposal: Proposal,
+    deadline: DateTime<Utc>,
+) -> anyhow::Result<Agreement> {
+    let agreement = proposal.create_agreement(deadline).await?;
+    if let Err(e) = agreement.confirm().await {
+        bail!("Waiting for approval failed. {}", e)
+    }
+
+    // TODO: Use AgreementView.
+    let name = agreement
+        .content()
+        .await?
+        .offer
+        .properties
+        .pointer("/golem.node.id.name")
+        .map(|value| value.as_str().map(|name| name.to_string()))
+        .flatten()
+        .ok_or(anyhow!("Can't find node name in Agreement"))?;
+
+    log::info!("Created agreement [{}] with '{}'", agreement.id(), name);
+    return Ok(agreement);
+}
+
+async fn proposals_collector(
+    subscription: Arc<SubscriptionInner>,
+    mut sender: mpsc::Sender<Proposal>,
+) {
+    let id = subscription.id.clone();
+    loop {
+        let items = match subscription
+            .api
+            .collect(id.as_ref(), Some(30f32), Some(15i32))
+            .await
+        {
+            Ok(items) => items,
+            Err(e) => {
+                log::debug!("Failed to collect proposals. Error: {}", e);
+                continue;
+            }
+        };
+
+        for item in items {
+            match item {
+                RequestorEvent::ProposalEvent { proposal, .. } => {
+                    let proposal = Proposal {
+                        subscription: subscription.clone(),
+                        proposal_id: proposal.proposal_id.clone(),
+                        data: proposal,
+                    };
+
+                    log::debug!(
+                        "Got proposal: {} -- from: {}, state: {:?}",
+                        proposal.id(),
+                        proposal.issuer_id(),
+                        proposal.state()
+                    );
+
+                    if let Err(_) = sender.send(proposal).await {
+                        // Probably no one is listening for these events anymore.
+                        return;
+                    }
+                }
+                _ => continue,
+            }
+        }
     }
 }
 
@@ -149,23 +270,19 @@ impl Proposal {
         props: &serde_json::Value,
         constraints: &str,
     ) -> anyhow::Result<String> {
-        let proposal = ya_client::model::market::Proposal {
+        let proposal = ya_client::model::market::NewProposal {
             properties: props.clone(),
             constraints: constraints.to_string(),
-            proposal_id: None,
-            issuer_id: None,
-            state: None,
-            prev_proposal_id: Some(self.proposal_id.clone()),
         };
         Ok(self
             .subscription
             .api
-            .counter_proposal(&proposal, self.subscription.id.as_ref())
+            .counter_proposal(&proposal, self.subscription.id.as_ref(), &self.proposal_id)
             .await?)
     }
 
     pub fn state(&self) -> ya_client::model::market::proposal::State {
-        self.data.state.unwrap_or_else(|| State::Initial)
+        self.data.state.clone()
     }
 
     pub fn is_response(&self) -> bool {
@@ -176,7 +293,11 @@ impl Proposal {
         let _ = self
             .subscription
             .api
-            .reject_proposal(self.subscription.id.as_ref(), self.proposal_id.as_str())
+            .reject_proposal(
+                self.subscription.id.as_ref(),
+                self.proposal_id.as_str(),
+                &None,
+            )
             .await?;
         Ok(())
     }
@@ -199,12 +320,8 @@ impl Proposal {
         &self.data.properties
     }
 
-    pub fn issuer_id(&self) -> &str {
-        self.data
-            .issuer_id
-            .as_ref()
-            .map(AsRef::as_ref)
-            .unwrap_or_default()
+    pub fn issuer_id(&self) -> NodeId {
+        self.data.issuer_id.clone()
     }
 }
 
@@ -224,7 +341,7 @@ impl Drop for AgreementInner {
         let api = self.api.clone();
         let agreement_id = self.agreement_id.clone();
         self.drop_list.async_drop(async move {
-            api.terminate_agreement(&agreement_id)
+            api.terminate_agreement(&agreement_id, &None)
                 .await
                 .with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
             log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);
@@ -247,7 +364,7 @@ impl Agreement {
         let _ = self
             .inner
             .api
-            .confirm_agreement(&self.inner.agreement_id)
+            .confirm_agreement(&self.inner.agreement_id, None)
             .await
             .with_context(|| {
                 format!(
@@ -268,6 +385,14 @@ impl Agreement {
             })?;
 
         Ok(())
+    }
+
+    pub async fn content(&self) -> anyhow::Result<ya_client::model::market::Agreement> {
+        Ok(self
+            .inner
+            .api
+            .get_agreement(&self.inner.agreement_id)
+            .await?)
     }
 
     pub fn id(&self) -> &str {

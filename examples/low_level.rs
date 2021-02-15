@@ -79,6 +79,7 @@ async fn do_init(activity: impl rest::Activity) -> anyhow::Result<()> {
                     "aea5db67524e02a263b9339fe6667d6b577f3d4c".to_string(),
                     "1".to_string(),
                 ],
+                capture: None,
             },
         ])
         .await?;

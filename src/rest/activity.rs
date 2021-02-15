@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
 use futures::future::LocalBoxFuture;
@@ -41,12 +41,13 @@ pub trait Activity {
 
 pub trait RunningBatch {
     fn id(&self) -> &str;
+    fn commands(&self) -> Vec<ExeScriptCommand>;
 
     fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>>;
 }
 
 pub struct DefaultActivity {
-    api: ActivityRequestorApi,
+    pub(crate) api: ActivityRequestorApi,
     activity_id: String,
     drop_list: Option<DropList>,
 }
@@ -69,6 +70,30 @@ impl DefaultActivity {
             activity_id,
             drop_list,
         })
+    }
+
+    pub async fn execute_commands(
+        &self,
+        commands: Vec<ExeScriptCommand>,
+    ) -> anyhow::Result<Vec<String>> {
+        let batch = self.exec(commands).await?;
+        batch
+            .events()
+            .and_then(|event| {
+                log::debug!("Event: {:?}", event);
+                match event {
+                    Event::StepFailed { message } => {
+                        future::err::<String, anyhow::Error>(anyhow!("Step failed: {}", message))
+                    }
+                    Event::StepSuccess { command, output } => {
+                        log::debug!("Command [{:?}] finished.", command);
+                        log::debug!("Command result:\n {}", output);
+                        future::ok(output)
+                    }
+                }
+            })
+            .try_collect()
+            .await
     }
 }
 
@@ -138,8 +163,8 @@ impl Activity for DefaultActivity {
 }
 
 pub struct DefaultBatch {
-    api: ActivityRequestorApi,
-    activity_id: String,
+    pub(crate) api: ActivityRequestorApi,
+    pub(crate) activity_id: String,
     batch_id: String,
     commands: Arc<[ExeScriptCommand]>,
 }
@@ -203,6 +228,10 @@ where
 impl RunningBatch for DefaultBatch {
     fn id(&self) -> &str {
         &self.batch_id
+    }
+
+    fn commands(&self) -> Vec<ExeScriptCommand> {
+        self.commands.iter().cloned().collect()
     }
 
     fn events(&self) -> stream::LocalBoxStream<'static, Result<Event>> {
@@ -328,6 +357,10 @@ pub struct SgxBatch {
 impl RunningBatch for SgxBatch {
     fn id(&self) -> &str {
         &self.batch_id
+    }
+
+    fn commands(&self) -> Vec<ExeScriptCommand> {
+        self.commands.iter().cloned().collect()
     }
 
     fn events(&self) -> LocalBoxStream<'static, Result<Event>> {
