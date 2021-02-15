@@ -10,17 +10,26 @@ use yarapi::{
 
 #[derive(StructOpt)]
 struct Args {
-    #[structopt(flatten)]
-    package: Location,
-    input: PathBuf,
+    #[structopt(long, default_value = "README.md")]
+    input_file: PathBuf,
     #[structopt(long, env, default_value = "community.4")]
     subnet: String,
+    #[structopt(flatten)]
+    package: Location,
 }
 
 #[derive(Debug, Clone, StructOpt)]
 enum Location {
-    Local { path: PathBuf },
-    Url { url: String, digest: String },
+    /// local file path
+    Local {
+        path: PathBuf,
+    },
+    /// remote url + sha
+    Url {
+        url: String,
+        digest: String,
+    },
+    Default,
 }
 
 impl From<Location> for Package {
@@ -28,6 +37,10 @@ impl From<Location> for Package {
         match args {
             Location::Local { path } => Package::Archive(path),
             Location::Url { digest, url } => Package::Url { digest, url },
+            Location::Default => Package::Url {
+                digest: "9a3b5d67b0b27746283cb5f287c13eab1beaa12d92a9f536b747c7ae".to_string(),
+                url: "http://yacn.dev.golem.network:8000/local-image-c76719083b.gvmi".to_string(),
+            },
         }
     }
 }
@@ -50,10 +63,10 @@ async fn main() -> anyhow::Result<()> {
         ])
         .with_tasks(vec!["1"].into_iter().map(move |i| {
             commands! {
-                upload(args.input.clone(), "/workdir/input");
-                run("/bin/ls", "-la", "/workdir/input");
-                run("/bin/cp", "/workdir/input", "/workdir/output");
-                download("/workdir/output", format!("output-{}", i))
+                upload(args.input_file.clone(), "/golem/work/input-file");
+                run("/bin/ls", "-la", "/golem/work");
+                run("/bin/cp", "/golem/work/input-file", "/golem/output");
+                download("/golem/output/input-file", format!("output-{}", i))
             }
         }))
         .on_completed(|activity_id, output| {
