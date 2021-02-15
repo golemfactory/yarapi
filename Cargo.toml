@@ -45,14 +45,13 @@ no-dev-version = true
 enable-all-features = true
 
 [patch.crates-io]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
-ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
+#ya-client = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
+#ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
 #ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
-gftp = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
-ya-compile-time-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
-ya-core-model = { git = "https://github.com/golemfactory/yagna.git", branch = "2rec/bump-crates-ver"}
-ya-service-bus = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
-ya-sb-proto = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
-#ya-sb-router = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
-ya-sb-util = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#gftp = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-compile-time-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-core-model = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-service-bus = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#ya-sb-proto = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+##ya-sb-router = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#ya-sb-util = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}

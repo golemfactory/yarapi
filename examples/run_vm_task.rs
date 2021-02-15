@@ -21,14 +21,10 @@ struct Args {
 #[derive(Debug, Clone, StructOpt)]
 enum Location {
     /// local file path
-    Local {
-        path: PathBuf,
-    },
+    Local { path: PathBuf },
     /// remote url + sha
-    Url {
-        url: String,
-        digest: String,
-    },
+    Url { url: String, digest: String },
+    /// use it as `YAGNA_APPKEY=$(yagna app-key list --json | jq -r .values[0][1]) cargo run --example run_vm_task default`
     Default,
 }
 
