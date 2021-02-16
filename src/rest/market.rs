@@ -1,14 +1,17 @@
 use anyhow::{anyhow, bail, Context};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use futures::prelude::*;
 use futures::TryStreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::rest::async_drop::{CancelableDropList, DropList};
+use std::collections::HashSet;
+use std::fmt::Display;
 use ya_client::market::MarketRequestorApi;
-use ya_client::model::market::NewDemand;
-use ya_client::model::market::{AgreementProposal, RequestorEvent};
+use ya_client::model::market::{
+    AgreementEventType, AgreementOperationEvent, AgreementProposal, NewDemand, RequestorEvent,
+};
 use ya_client::model::NodeId;
 use ya_client::web::WebClient;
 
@@ -28,7 +31,7 @@ impl AsRef<str> for SubscriptionId {
 }
 
 pub struct Market {
-    api: MarketRequestorApi,
+    pub api: MarketRequestorApi,
     drop_list: DropList,
 }
 
@@ -69,6 +72,84 @@ impl Market {
 
     pub fn subscriptions(&self) -> impl Stream<Item = anyhow::Result<Subscription>> {
         stream::empty()
+    }
+
+    /// Lists all Agreements for identity, that is currently used.
+    /// You can filter Agreements using AppSessionId parameter.
+    pub async fn list_agreements<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<String>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        Ok(self
+            .list_agreement_events(since, app_session_id)
+            .await?
+            .into_iter()
+            .filter_map(|event| match event.event_type {
+                AgreementEventType::AgreementApprovedEvent => Some(event.agreement_id),
+                _ => None,
+            })
+            .collect())
+    }
+
+    pub async fn list_active_agreements<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<String>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        let mut agreements = HashSet::new();
+        self.list_agreement_events(since, app_session_id)
+            .await?
+            .into_iter()
+            .for_each(|event| {
+                match event.event_type {
+                    AgreementEventType::AgreementApprovedEvent => {
+                        agreements.insert(event.agreement_id)
+                    }
+                    AgreementEventType::AgreementTerminatedEvent { .. } => {
+                        agreements.remove(&event.agreement_id)
+                    }
+                    _ => false,
+                };
+                ()
+            });
+
+        Ok(agreements.into_iter().collect())
+    }
+
+    pub async fn list_agreement_events<Tz>(
+        &self,
+        since: &DateTime<Tz>,
+        app_session_id: Option<String>,
+    ) -> anyhow::Result<Vec<AgreementOperationEvent>>
+    where
+        Tz: TimeZone,
+        Tz::Offset: Display,
+    {
+        let mut since = since.with_timezone(&Utc);
+        let mut events = vec![];
+
+        loop {
+            let new_events = self
+                .api
+                .collect_agreement_events(Some(0.0), Some(&since), Some(30), app_session_id.clone())
+                .await?;
+
+            if new_events.is_empty() {
+                return Ok(events);
+            }
+
+            since = new_events.last().unwrap().event_date;
+            events.extend(new_events);
+        }
     }
 }
 
