@@ -46,7 +46,7 @@ impl PaymentManager {
 
         let f = async move {
             let events = api
-                .get_debit_note_events(Some(&ts), Some(Duration::from_secs(60)), None, None)
+                .get_debit_note_events(Some(&ts), Some(Duration::from_secs(60)), Some(5), None)
                 .await?;
             for event in events {
                 log::debug!("got debit note: {:?}", event);
@@ -77,7 +77,7 @@ impl PaymentManager {
 
         let f = async move {
             let events = api
-                .get_invoice_events(Some(&ts), Some(Duration::from_secs(60)), None, None)
+                .get_invoice_events(Some(&ts), Some(Duration::from_secs(60)), Some(5), None)
                 .await?;
             let mut new_invoices = Vec::new();
             for event in events {
@@ -104,7 +104,7 @@ impl PaymentManager {
                             if this.valid_agreements.remove(&invoice.agreement_id) {
                                 let invoice_id = invoice.invoice_id;
                                 log::info!(
-                                    "Accepting invoice amounted {} NGNT, issuer: {}",
+                                    "Accepting invoice amounted {} GLM, issuer: {}",
                                     invoice.amount,
                                     invoice.issuer_id
                                 );

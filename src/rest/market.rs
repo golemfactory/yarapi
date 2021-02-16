@@ -10,9 +10,8 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use ya_client::market::MarketRequestorApi;
 use ya_client::model::market::{
-    AgreementEventType, AgreementOperationEvent, AgreementProposal, RequestorEvent,
+    AgreementEventType, AgreementOperationEvent, AgreementProposal, NewDemand, RequestorEvent,
 };
-use ya_client::model::market::{NewDemand, Reason};
 use ya_client::model::NodeId;
 use ya_client::web::WebClient;
 
@@ -378,7 +377,7 @@ impl Proposal {
             .reject_proposal(
                 self.subscription.id.as_ref(),
                 self.proposal_id.as_str(),
-                &Option::<Reason>::None,
+                &None,
             )
             .await?;
         Ok(())
@@ -423,7 +422,7 @@ impl Drop for AgreementInner {
         let api = self.api.clone();
         let agreement_id = self.agreement_id.clone();
         self.drop_list.async_drop(async move {
-            api.terminate_agreement(&agreement_id, &Option::<Reason>::None)
+            api.terminate_agreement(&agreement_id, &None)
                 .await
                 .with_context(|| format!("Failed to auto destroy Agreement: {:?}", agreement_id))?;
             log::debug!(target:"yarapi::drop", "Agreement {:?} terminated", agreement_id);

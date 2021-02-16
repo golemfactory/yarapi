@@ -66,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
         Requestor::new(&args.name, Image::Wasm((0, 1, 0).into()), package)
     }
     .with_subnet(&args.subnet)
-    .with_max_budget_ngnt(10)
+    .with_max_budget_glm(10)
     .with_timeout(Duration::from_secs(12 * 60))
     .with_constraints(constraints![
         "golem.inf.mem.gib" > 0.4,
