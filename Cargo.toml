@@ -1,6 +1,6 @@
 [package]
 name = "yarapi"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Golem Factory <contact@golem.network>"]
 edition = "2018"
 homepage = "https://github.com/golemfactory/yarapi"
@@ -12,9 +12,9 @@ keywords=["golem", "yagna"]
 
 
 [dependencies]
-ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "a5bfc61da8f3a5cdcafcacf3d48a9f706571a9d7", features = ["sgx"] }
-gftp = "0.1.2"
-ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", rev = "552859220b764b39984580aacf0a81475b75da2e" }
+ya-client = { version = "0.5", features = ["sgx"] }
+gftp = "0.2"
+ya-agreement-utils = "0.2"
 
 actix = "0.9"
 actix-rt = "1.0"
@@ -48,6 +48,14 @@ tokio = { version = "0.2.10", features = ["macros"] }
 no-dev-version = true
 enable-all-features = true
 
-
-#[patch.crates-io]
-#ya-client = { git = "https://github.com/golemfactory/ya-client.git", rev = "0efbf2f875d804a283d162fc9e1679516be08900"}
+[patch.crates-io]
+#ya-client = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
+#ya-client-model = { git = "https://github.com/golemfactory/ya-client.git", branch = "release/v0.5"}
+#ya-agreement-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#gftp = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-compile-time-utils = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-core-model = { git = "https://github.com/golemfactory/yagna.git", branch = "release/v0.6.0"}
+#ya-service-bus = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#ya-sb-proto = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+##ya-sb-router = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
+#ya-sb-util = { git = "https://github.com/golemfactory/ya-service-bus.git", rev = "6b494e17d7a662e0b710af8c5a2e99ab4007fdb9"}
