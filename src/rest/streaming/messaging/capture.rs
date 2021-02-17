@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 
 use ya_client::model::activity::{CommandOutput, RuntimeEvent, RuntimeEventKind};
 
-use super::messaging::ExeUnitMessage;
+use super::ExeUnitMessage;
 
 struct MessageProcessor<MessageType: ExeUnitMessage> {
     notifier: mpsc::UnboundedSender<MessageType>,

@@ -2,9 +2,9 @@ use futures::prelude::*;
 use std::path::Path;
 use tokio::sync::mpsc;
 
-use super::capture_messages::CaptureMessages;
 use super::forward_to_file::ForwardToFile;
 use super::forward_to_std::ForwardStd;
+use super::messaging::capture::CaptureMessages;
 use super::messaging::ExeUnitMessage;
 
 use ya_client::model::activity::RuntimeEvent;
@@ -27,6 +27,8 @@ pub trait ResultStream: Stream {
         ForwardToFile::new(self, stdout, stderr)
     }
 
+    /// Uses passed channel to notify about messages discovered in stream.
+    /// Recognized messages are removed from stream.
     fn capture_messages<MessageType: ExeUnitMessage>(
         self,
         notifier: mpsc::UnboundedSender<MessageType>,
