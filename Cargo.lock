@@ -302,9 +302,9 @@ checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
 name = "bigdecimal"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1374191e2dd25f9ae02e3aa95041ed5d747fc77b3c102b49fe2dd9a8117a6244"
+checksum = "cc403c26e6b03005522e6e8053384c4e881dfe5b2bf041c0c2c49be33d64a539"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -1257,9 +1257,9 @@ dependencies = [
 
 [[package]]
 name = "num-bigint"
-version = "0.2.6"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
+checksum = "7d0a3d5e207573f948a9e5376662aa743a2ea13f7c50a554d7af443a73fbfeba"
 dependencies = [
  "autocfg 1.0.1",
  "num-integer",
@@ -1909,9 +1909,9 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "secp256k1"
-version = "0.17.2"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2932dc07acd2066ff2e3921a4419606b220ba6cd03a9935123856cc534877056"
+checksum = "c6179428c22c73ac0fbb7b5579a56353ce78ba29759b3b8575183336ea74cdfb"
 dependencies = [
  "rand 0.6.5",
  "secp256k1-sys",
@@ -1920,9 +1920,9 @@ dependencies = [
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.1.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ab2c26f0d3552a0f12e639ae8a64afc2e3db9c52fe32f5fc6c289d38519f220"
+checksum = "11553d210db090930f4432bea123b31f70bbf693ace14504ea2a35e796c28dd2"
 dependencies = [
  "cc",
 ]
@@ -2626,9 +2626,9 @@ dependencies = [
 
 [[package]]
 name = "ya-client"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43cf68fa232c9de768f3a8041d7725b6817e7561fdab22d462d485da37c65f4a"
+checksum = "6be6d483d72a51534830a30df9471622d30686144b40677d158d781a0c74f545"
 dependencies = [
  "awc",
  "bytes 0.5.6",
@@ -2655,9 +2655,9 @@ dependencies = [
 
 [[package]]
 name = "ya-client-model"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d166700c6215a0a80f6e75bd33d74a5a4adb3715114bb3d47e4f9a33bb2a2fa2"
+checksum = "f399f4c6753e090751b06f5937ce45bb6188ba0f9ba436383591c51af3347082"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -2687,9 +2687,9 @@ dependencies = [
 
 [[package]]
 name = "ya-core-model"
-version = "0.3.0"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9e9b1ca35818d65ca0394126bea821f0f42626d89ce0cccad88ab4d43ce6f29"
+checksum = "021bb34d665787ed382f97ef807bbb9df72bcee00c5d2a75a42a9899b245b1f6"
 dependencies = [
  "chrono",
  "derive_more",
@@ -2706,9 +2706,9 @@ dependencies = [
 
 [[package]]
 name = "ya-sb-proto"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba491b25b0ca2d03f697c7a734f79f7bb9550e570132bd95af53f62d52668424"
+checksum = "1eaa297ee64562ccd1041bb9d2c666a73b92329f83edfdc3bb2e78aad1087b0c"
 dependencies = [
  "bytes 0.5.6",
  "prost",
@@ -2731,9 +2731,9 @@ dependencies = [
 
 [[package]]
 name = "ya-service-bus"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7650b19a2f73f5d6cded3045756fc35048abc094781154d3145ca21dd68ce8c6"
+checksum = "4d6a8147bc05117b64c27d0509640375ceda3496525619a72b66f69ac8951ac1"
 dependencies = [
  "actix",
  "flexbuffers",
